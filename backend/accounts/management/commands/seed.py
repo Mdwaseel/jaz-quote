@@ -9,6 +9,7 @@ built when it is empty — use ``--reset-catalog`` to deliberately rebuild it.
     python manage.py seed --demo          # also a sample 7.2.4 quotation (local testing)
 """
 import os
+import secrets
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -20,8 +21,9 @@ from catalog.models import City, Country, Package, PackageItem, PaymentTerm, Pro
 from quotes.models import Quotation
 
 ADMIN_EMAIL = os.environ.get("SEED_ADMIN_EMAIL", "admin@jazhometheatres.com")
-# Used only when the account is first created. Set SEED_ADMIN_PASSWORD in production.
-ADMIN_PASSWORD = os.environ.get("SEED_ADMIN_PASSWORD", "JazAdmin@2026")
+# Used only when the account is first created. There is deliberately no default: without
+# SEED_ADMIN_PASSWORD a random password is generated and printed once.
+ADMIN_PASSWORD = os.environ.get("SEED_ADMIN_PASSWORD") or ""
 
 
 class Command(BaseCommand):
@@ -86,11 +88,13 @@ class Command(BaseCommand):
             branch=Branch.objects.filter(franchise=jaz_f).first(), date_of_joining=timezone.now().date(),
             is_staff=True, is_superuser=True,
         )
-        admin.set_password(ADMIN_PASSWORD)
+        password = ADMIN_PASSWORD or secrets.token_urlsafe(12)
+        admin.set_password(password)
         admin.save()
         # Admin panel + the sales app (Admin can also create quotations).
         admin.roles.add(Role.objects.get(name="Admin"), Role.objects.get(name="BDM"))
-        self.stdout.write(f"Created admin login {ADMIN_EMAIL} — change the password after first sign-in.")
+        shown = "" if ADMIN_PASSWORD else f" with the generated password: {password}"
+        self.stdout.write(f"Created admin login {ADMIN_EMAIL}{shown} — change it after first sign-in.")
 
     def sample_quote(self):
         """A 7.2.4 quotation matching the JAZ template (₹18.9 L list → ₹17.9 L offer)."""

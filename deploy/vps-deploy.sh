@@ -16,7 +16,7 @@ HOME_DIR=/opt/jaz-deploy            # this script, logs, previous releases
 BACKUPS=/opt/jaz-backups            # database dumps
 KEEP_RELEASES=3
 KEEP_DB_BACKUPS=14
-HEALTH_URL=http://127.0.0.1:8085
+HEALTH_URL=http://127.0.0.1:${WEB_PORT:-8086}
 
 TS=$(date +%Y%m%d-%H%M%S)
 mkdir -p "$HOME_DIR/logs" "$HOME_DIR/releases" "$BACKUPS"

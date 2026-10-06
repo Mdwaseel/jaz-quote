@@ -8,8 +8,7 @@ approval hierarchy, and download the branded JAZ quotation PDF.
 Quote/
 ├── backend/     Django API (accounts, catalog, quotes, dashboard, adminpanel)
 ├── frontend/    React + Vite + MUI app (sales app + admin panel)
-├── deploy/      VPS / Nginx / systemd helpers
-└── docs/        API notes
+└── deploy/      VPS / Nginx / systemd helpers
 ```
 
 ## Run it locally — one command
@@ -37,7 +36,7 @@ cd backend; .\.venv\Scripts\python manage.py seed --demo
 `manage.py seed` creates one Admin login from `backend/.env`:
 
 - `SEED_ADMIN_EMAIL` — the admin email (login codes are emailed here)
-- `SEED_ADMIN_PASSWORD` — the first password; change it after signing in
+- `SEED_ADMIN_PASSWORD` — the first password (if unset, a random one is generated and printed once); change it after signing in
 
 With `OTP_ENABLED=true` and SMTP configured, every sign-in also needs the 6-digit code
 emailed to the user. Set `OTP_ENABLED=false` to sign in with the password only (local testing).

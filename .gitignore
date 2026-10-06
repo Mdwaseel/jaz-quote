@@ -20,3 +20,14 @@ frontend/dist/
 .DS_Store
 *.log
 *.sqlite3
+
+# BRIO material that is not part of the JAZ app (kept locally, never published)
+docs/
+backend/pdf_assets/cover_be300.png
+backend/pdf_assets/cover_be360.png
+backend/pdf_assets/content.png
+backend/db.brio-backup.sqlite3
+
+# Tool caches
+.impeccable/
+frontend/.impeccable/
