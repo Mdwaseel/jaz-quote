@@ -39,8 +39,10 @@ const publicFetch = async (path, opts = {}) => {
   return r;
 };
 export const publicEsign = async (token) => (await (await publicFetch(encodeURIComponent(token))).json()).data;
-export const publicEsignPdf = async (token) =>
-  URL.createObjectURL(await (await publicFetch(`${encodeURIComponent(token)}/pdf`)).blob());
+// A plain URL (the token is the credential) so the browser opens the PDF itself — this is what
+// works on iPhone/Android and inside mail apps' in-app browsers, unlike blob URLs in pop-ups.
+export const publicEsignPdfUrl = (token, download = false) =>
+  `${PUBLIC}${encodeURIComponent(token)}/pdf${download ? '?download=1' : ''}`;
 export const publicEsignSign = async (token, payload) =>
   (await (await publicFetch(`${encodeURIComponent(token)}/sign`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)

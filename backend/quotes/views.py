@@ -472,7 +472,7 @@ def esign_onsite(request):
 def esign_public(request, token):
     from . import esign
 
-    return ok(esign.public_summary(esign.by_token(token)))
+    return ok(esign.public_summary(esign.by_token(token, allow_signed=True)))
 
 
 @api(methods=("GET",), auth=False)
@@ -480,10 +480,16 @@ def esign_public_pdf(request, token):
     from . import esign
     from .pdf import generate_quote_pdf
 
-    sig = esign.by_token(token)
+    sig = esign.by_token(token, allow_signed=True)
     rel = generate_quote_pdf(sig.quotation)
     full = Path(settings.MEDIA_ROOT) / rel
-    return FileResponse(open(full, "rb"), content_type="application/pdf",
+    handle = open(full, "rb")
+    try:
+        full.unlink()  # streamed from the open handle — customer views don't pile up on disk
+    except OSError:
+        pass  # Windows cannot remove an open file; harmless in development
+    # Opened directly by the browser (a plain link), so it works on phones and in-app mail browsers.
+    return FileResponse(handle, content_type="application/pdf", as_attachment=bool(request.GET.get("download")),
                         filename=f"{sig.quotation.quotation_number}.pdf")
 
 

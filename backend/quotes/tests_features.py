@@ -205,6 +205,16 @@ class FeatureTests(EngineTestBase):
         ok = post({"Signature": PNG, "Photo": JPEG, "Consent": True, "SignerName": "Mr Client"})
         self.assertEqual(ok.status_code, 200, ok.content)
         self.assertEqual(post({"Signature": PNG, "Photo": JPEG, "Consent": True}).status_code, 410)  # single use
+        # The same link still opens the (now signed) quotation and its PDF — viewing, not re-signing.
+        after = self.client.get(f"/api/public/esign/{token}")
+        self.assertEqual((after.status_code, after.json()["data"]["Status"]), (200, "SIGNED"))
+        for url, disposition in ((f"/api/public/esign/{token}/pdf", "inline"),
+                                 (f"/api/public/esign/{token}/pdf?download=1", "attachment")):
+            pdf = self.client.get(url)
+            self.assertEqual(pdf.status_code, 200, url)
+            self.assertTrue(pdf["Content-Disposition"].startswith(disposition), pdf["Content-Disposition"])
+            self.assertEqual(b"".join(pdf.streaming_content), b"%PDF-1.4 fake")
+            pdf.close()
         q.refresh_from_db()
         self.assertEqual(q.sales_info["CustomerSign"], PNG)
         sig = CustomerSignature.objects.get(quotation=q, status="SIGNED")

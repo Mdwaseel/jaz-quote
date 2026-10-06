@@ -147,12 +147,20 @@ def _email_customer(quote, email, link):
     return True
 
 
-def by_token(token):
+def by_token(token, allow_signed=False):
+    """The e-sign request behind a customer link. Signing needs an open link; viewing
+    (``allow_signed``) also works after signing, so the customer can open their signed copy."""
     sig = CS.objects.select_related("quotation__customer").filter(token_hash=_hash(token or ""), method=CS.ESIGN).first()
     if sig is None:
         raise WorkflowError("This signing link is not valid.", 404)
     if sig.status == CS.SIGNED:
-        raise WorkflowError("This quotation has already been signed. Thank you!", 410)
+        if not allow_signed:
+            raise WorkflowError("This quotation has already been signed. Thank you!", 410)
+        if sig.expires_at and sig.expires_at < timezone.now():
+            raise WorkflowError("This link has expired. Please ask your JAZ representative for a copy.", 410)
+        if sig.version_number != sig.quotation.current_version:
+            raise WorkflowError("This quotation has changed since you signed it. Please contact your JAZ representative.", 410)
+        return sig
     if sig.status == CS.CANCELLED:
         raise WorkflowError("This signing link has been replaced by a newer one. Please use the latest email.", 410)
     if sig.expires_at and sig.expires_at < timezone.now():
@@ -184,6 +192,8 @@ def public_summary(sig):
         "Warranty": q.warranty_details, "Amc": q.amc_details,
         "SalesBy": (q.sales_info or {}).get("SalesBy") or "",
         "Consent": CONSENT_TEXT, "ExpiresAt": sig.expires_at.isoformat() if sig.expires_at else None,
+        "Status": sig.status, "SignedAt": sig.signed_at.isoformat() if sig.signed_at else None,
+        "SignerName": sig.signer_name,
     }
 
 
