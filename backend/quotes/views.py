@@ -117,6 +117,7 @@ def _list_row(user, q):
         "IsMine": q.created_by_id == user.id,
         "IsLocked": q.workflow_status not in (Quotation.DRAFT, Quotation.EDITING) and creator_role in H.LOCKED_CREATOR_ROLES,
         "CanDownload": can_dl, "DownloadBlockedReason": reason,
+        "CancelReason": q.cancel_reason, "CancelledAt": q.cancelled_at.isoformat() if q.cancelled_at else None,
     }
 
 
@@ -124,7 +125,13 @@ def _list_row(user, q):
 def get_quote_list(request):
     user = request.auth_user
     scope = (request.data or {}).get("scope") or "all"
-    qs = W.visible_quotes(user).select_related("customer", "created_by").exclude(status="Inactive")
+    state = (request.data or {}).get("state") or "all"  # all | active | cancelled
+    # Cancelled quotations are kept and listed (they used to be hidden, which looked like deletion).
+    qs = W.visible_quotes(user).select_related("customer", "created_by")
+    if state == "active":
+        qs = qs.exclude(workflow_status=Quotation.CANCELLED)
+    elif state == "cancelled":
+        qs = qs.filter(workflow_status=Quotation.CANCELLED)
     if scope == "mine":
         qs = qs.filter(created_by=user)
     elif scope == "team":
@@ -204,17 +211,20 @@ def confirm_quote(request):
 
 @api()
 def delete_quote(request):
+    """Cancel a quotation (it is never deleted). Requires a reason from CANCEL_REASONS."""
     d = request.data or {}
-    user = request.auth_user
-    if d.get("QuotationNumber"):
-        quotes = [W.get_quote_for(user, d.get("QuotationNumber"))]
-    else:  # legacy: by customer id
-        quotes = [q for q in Quotation.objects.filter(customer_id=d.get("customerId")) if W.can_view(user, q)]
-        if not quotes:
-            return fail("Quotation not found.", 404)
-    for q in quotes:
-        W.cancel_quotation(user, q)
-    return ok({"Message": "Quote cancelled."})
+    q = W.cancel_quotation(request.auth_user, W.get_quote_for(request.auth_user, d.get("QuotationNumber")),
+                           d.get("Reason"), d.get("Note"))
+    return ok({"Message": "Quotation cancelled.", "WorkflowStatus": q.workflow_status})
+
+
+@api()
+def restore_quote(request):
+    d = request.data or {}
+    q = W.restore_quotation(request.auth_user, W.get_quote_for(request.auth_user, d.get("QuotationNumber")),
+                            d.get("Note"))
+    return ok({"Message": "Quotation restored.", "WorkflowStatus": q.workflow_status,
+               "WorkflowLabel": W.STATUS_LABEL[q.workflow_status]})
 
 
 @api()

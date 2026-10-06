@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Box, Button, IconButton, Tooltip, TextField, InputAdornment, Stack, Tabs, Tab, Typography, Alert, Chip } from '@mui/material';
+import { Box, Button, IconButton, Tooltip, TextField, InputAdornment, Stack, Tabs, Tab, Typography, Alert, Chip, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { AgGridReact } from 'ag-grid-react';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-quartz.css';
@@ -35,6 +35,9 @@ export default function QuotationList() {
   const scopes = SCOPES[userRole(user)] || SCOPES[ROLES.BDM];
   const [params, setParams] = useSearchParams();
   const scope = scopes.find(([k]) => k === params.get('scope'))?.[0] || scopes[0][0];
+  // Cancelled quotations are kept; this only filters the view.
+  const state = ['active', 'cancelled'].includes(params.get('state')) ? params.get('state') : 'all';
+  const setParam = (k, v) => setParams((prev) => { const n = new URLSearchParams(prev); if (v) n.set(k, v); else n.delete(k); return n; });
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -44,14 +47,14 @@ export default function QuotationList() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows((await axios.post(Endpoints.Get_QuoteList, { scope })).data.data || []);
+      setRows((await axios.post(Endpoints.Get_QuoteList, { scope, state })).data.data || []);
       setError('');
     } catch (e) {
       setError(errMsg(e, 'Could not load quotations.'));
     } finally {
       setLoading(false);
     }
-  }, [scope]);
+  }, [scope, state]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -91,7 +94,11 @@ export default function QuotationList() {
       { headerName: 'Discount', field: 'DiscountPercent', width: 110, type: 'rightAligned', valueFormatter: (p) => pct(p.value) },
       {
         headerName: 'Approval status', field: 'WorkflowStatus', width: 200, pinned: 'right',
-        cellRenderer: (p) => <WorkflowStatusChip status={p.value} locked={p.data.IsLocked} />
+        cellRenderer: (p) => (p.value === 'CANCELLED' ? (
+          <Tooltip title={p.data.CancelReason ? `Cancelled — ${p.data.CancelReason}` : 'Cancelled'}>
+            <span><WorkflowStatusChip status={p.value} /></span>
+          </Tooltip>
+        ) : <WorkflowStatusChip status={p.value} locked={p.data.IsLocked} />)
       },
       {
         headerName: 'Deal', field: 'DealStatus', width: 130,
@@ -145,7 +152,7 @@ export default function QuotationList() {
         }
       />
       {scopes.length > 1 && (
-        <Tabs value={scope} onChange={(_, v) => setParams({ scope: v })} sx={{ mb: 2 }}>
+        <Tabs value={scope} onChange={(_, v) => setParam('scope', v)} sx={{ mb: 2 }}>
           {scopes.map(([k, label]) => <Tab key={k} value={k} label={label} />)}
         </Tabs>
       )}
@@ -153,6 +160,13 @@ export default function QuotationList() {
       <MainCard
         title={<Typography variant="h3">{scopes.find(([k]) => k === scope)?.[1]}</Typography>}
         secondary={
+          <Stack direction="row" spacing={1.5} alignItems="center">
+          <ToggleButtonGroup size="small" exclusive value={state} onChange={(_, v) => v && setParam('state', v === 'all' ? '' : v)}
+            aria-label="Filter by status">
+            <ToggleButton value="all">All</ToggleButton>
+            <ToggleButton value="active">Active</ToggleButton>
+            <ToggleButton value="cancelled">Cancelled</ToggleButton>
+          </ToggleButtonGroup>
           <TextField
             size="small"
             placeholder="Search..."
@@ -160,6 +174,7 @@ export default function QuotationList() {
             onChange={(e) => setQuickFilter(e.target.value)}
             InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>) }}
           />
+          </Stack>
         }
       >
         <div className="ag-theme-quartz" style={{ height: 560, width: '100%' }}>
@@ -173,6 +188,7 @@ export default function QuotationList() {
             animateRows
             loading={loading}
             onRowDoubleClicked={(e) => navigate(`/quotation/view/${e.data.QuotationNumber}`)}
+            getRowStyle={(p) => (p.data?.WorkflowStatus === 'CANCELLED' ? { opacity: 0.62 } : undefined)}
           />
         </div>
       </MainCard>

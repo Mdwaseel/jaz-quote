@@ -32,6 +32,8 @@ SUBJECTS = {
     "transferred": "Quotations Transferred to You — {no}",
     "esign_signed": "Quotation Signed by Customer — {no}",
     "deal": "Deal Update — {no}",
+    "cancelled": "Quotation Cancelled — {no}",
+    "restored": "Quotation Restored — {no}",
 }
 
 

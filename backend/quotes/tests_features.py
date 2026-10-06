@@ -297,3 +297,44 @@ class FeatureTests(EngineTestBase):
         self.assertEqual(deal(self.daniel, lost, "OPEN").status_code, 200)  # reopen
         lost.refresh_from_db()
         self.assertEqual(lost.deal_status, "OPEN")
+
+    # ------------------------------------------------------------ 6. cancellation (kept, never deleted)
+    def test_cancel_needs_a_reason_and_keeps_the_quotation(self):
+        q = self.create(self.daniel, 20)  # waiting on the RM
+        cancel = lambda u, **kw: self.call(u, "quote/cancel", {"QuotationNumber": q.quotation_number, **kw})  # noqa: E731
+        self.assertEqual(cancel(self.daniel).status_code, 400)  # reason required
+        self.assertEqual(cancel(self.daniel, Reason="Other").status_code, 400)  # "Other" needs a note
+        self.assertEqual(cancel(self.azar, Reason="Duplicate quotation").status_code, 404)  # other branch
+        r = cancel(self.daniel, Reason="Customer chose another vendor", Note="Went with a local dealer")
+        self.assertEqual(r.status_code, 200, r.content)
+        q.refresh_from_db()
+        self.assertEqual((q.workflow_status, q.cancel_reason, q.cancel_note, q.cancelled_by_id),
+                         ("CANCELLED", "Customer chose another vendor", "Went with a local dealer", self.daniel.id))
+        self.assertEqual(q.approval_requests.get(category="DISCOUNT").status, "CANCELLED")  # nothing left for the RM
+        rows = self.call(self.daniel, "quote/getListofQuotation", {"scope": "mine"}).json()["data"]
+        row = next(x for x in rows if x["QuotationNumber"] == q.quotation_number)  # still listed
+        self.assertEqual((row["WorkflowStatus"], row["CancelReason"]), ("CANCELLED", "Customer chose another vendor"))
+        active = self.call(self.daniel, "quote/getListofQuotation", {"scope": "mine", "state": "active"}).json()["data"]
+        self.assertNotIn(q.quotation_number, [x["QuotationNumber"] for x in active])
+        wf = self.call(self.daniel, "quote/getquote", {"QuoteId": q.quotation_number}, "get").json()["data"]["response"]["Workflow"]
+        self.assertEqual((wf["Cancellation"]["By"], wf["Cancellation"]["Reason"]), ("Daniel", "Customer chose another vendor"))
+        self.assertFalse(wf["Permissions"]["canRestore"])  # a BDM can't reopen their own locked quotation
+        self.assertIn("Quotation Cancelled", q.events.values_list("action", flat=True))
+        self.assertTrue(any("Quotation Cancelled" in m.subject for m in mail.outbox if m.to == ["ravi@brio.test"]))
+        self.assertEqual(cancel(self.daniel, Reason="Duplicate quotation").status_code, 409)
+
+    def test_restore_a_cancelled_quotation(self):
+        approved, pending = self.create(self.daniel, 0), self.create(self.daniel, 20)
+        for q in (approved, pending):
+            self.call(self.daniel, "quote/cancel", {"QuotationNumber": q.quotation_number, "Reason": "Project on hold / postponed"})
+        restore = lambda u, q: self.call(u, "quote/restore", {"QuotationNumber": q.quotation_number})  # noqa: E731
+        self.assertEqual(restore(self.daniel, approved).status_code, 403)
+        self.assertEqual(restore(self.shiva, approved).status_code, 404)  # other branch
+        self.assertEqual(restore(self.ravi, approved).status_code, 200)
+        self.assertEqual(restore(self.ravi, pending).status_code, 200)
+        approved.refresh_from_db()
+        pending.refresh_from_db()
+        self.assertEqual((approved.workflow_status, approved.status, approved.cancel_reason), ("APPROVED", "Pending", ""))
+        self.assertEqual(pending.workflow_status, "EDITING")  # re-submit; approvals are re-evaluated
+        self.assertIn("Quotation Restored", approved.events.values_list("action", flat=True))
+        self.assertEqual(restore(self.ravi, approved).status_code, 409)

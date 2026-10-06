@@ -8,19 +8,22 @@ import {
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import BlockOutlinedIcon from '@mui/icons-material/BlockOutlined';
+import RestoreOutlinedIcon from '@mui/icons-material/RestoreOutlined';
 import PageHeader from '../../components/PageHeader';
 import MainCard from '../../components/MainCard';
 import PdfPreviewDialog from '../../components/PdfPreviewDialog';
 import CustomerSignatureCard from './CustomerSignatureCard';
 import DealOutcomeCard from './DealOutcomeCard';
 import BoqTable from './BoqTable';
+import { CancelQuoteDialog, RestoreQuoteDialog } from './CancelQuoteDialog';
 import FinancialSummary from '../../components/workflow/FinancialSummary';
 import ApprovalChain from '../../components/workflow/ApprovalChain';
 import WorkflowStatusChip, { RequestStatusChip, OutsideLimitChip } from '../../components/workflow/WorkflowStatusChip';
 import ApprovalActionDialog from '../../components/workflow/ApprovalActionDialog';
 import { describeValue, fmtDate, inr, pct } from '../../components/workflow/format';
 import {
-  getQuote, getHistory, requestEdit, downloadQuotePdf, cancelQuote, errMsg
+  getQuote, getHistory, requestEdit, downloadQuotePdf, errMsg
 } from '../../api/workflow';
 import { fetchCounts } from '../../store/slices/approvalSlice';
 
@@ -56,6 +59,8 @@ export default function QuoteView() {
   const [editReq, setEditReq] = useState({ open: false, reason: '', changes: '', busy: false, error: '' });
   const [act, setAct] = useState({ open: false, req: null, action: 'approve' });
   const [pdf, setPdf] = useState({ open: false, url: '', filename: '', loading: false, error: '' });
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -104,17 +109,22 @@ export default function QuoteView() {
     }
   };
 
-  const runAction = async (fn, message) => {
-    try {
-      await fn(number);
-      setToast(message);
-      load();
-    } catch (e) {
-      setToast(errMsg(e, 'Action failed.'));
-    }
-  };
-
   const banner = (() => {
+    if (wf.WorkflowStatus === 'CANCELLED') {
+      const c = wf.Cancellation || {};
+      return (
+        <Alert severity="error" icon={<BlockOutlinedIcon />}
+          action={perm.canRestore && (
+            <Button color="inherit" size="small" startIcon={<RestoreOutlinedIcon />} onClick={() => setRestoreOpen(true)}>Restore</Button>
+          )}>
+          <b>Cancelled</b>{c.By ? ` by ${c.By}` : ''}{c.At ? ` on ${fmtDate(c.At)}` : ''}{c.Reason ? ` — ${c.Reason}` : ''}.
+          {c.Note && <Box component="span" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic' }}>“{c.Note}”</Box>}
+          <Box component="span" sx={{ display: 'block', mt: 0.5 }}>
+            The quotation is kept for reference{perm.canRestore ? ' and can be restored.' : '. A manager or Admin can restore it.'}
+          </Box>
+        </Alert>
+      );
+    }
     if (wf.WorkflowStatus === 'EDITING') {
       return <Alert icon={<EditOutlinedIcon />} severity="info">Editing enabled — your RM approved a modification. Re-submit to lock the quotation again; approvals will be re-evaluated.</Alert>;
     }
@@ -203,9 +213,9 @@ export default function QuoteView() {
                 <KV rows={wf.Hierarchy.map((h) => [h.role, h.name])} />
               </Section>
             )}
-            {perm.canCancel && wf.WorkflowStatus !== 'CANCELLED' && (
+            {perm.canCancel && (
               <Stack direction="row" spacing={1}>
-                <Button color="error" onClick={() => runAction(cancelQuote, 'Quotation cancelled')}>Cancel quotation</Button>
+                <Button color="error" startIcon={<BlockOutlinedIcon />} onClick={() => setCancelOpen(true)}>Cancel quotation</Button>
               </Stack>
             )}
           </Grid>
@@ -361,6 +371,13 @@ export default function QuoteView() {
         onClose={() => setAct((a) => ({ ...a, open: false }))}
         onDone={() => { setAct((a) => ({ ...a, open: false })); setToast('Decision recorded'); dispatch(fetchCounts()); load(); }}
       />
+
+      <CancelQuoteDialog open={cancelOpen} number={number} reasons={wf.CancelReasons}
+        onClose={() => setCancelOpen(false)}
+        onDone={() => { setCancelOpen(false); setToast('Quotation cancelled — it is kept under Cancelled'); dispatch(fetchCounts()); load(); }} />
+      <RestoreQuoteDialog open={restoreOpen} number={number}
+        onClose={() => setRestoreOpen(false)}
+        onDone={(res) => { setRestoreOpen(false); setToast(`Quotation restored — ${res.WorkflowLabel}`); load(); }} />
 
       <PdfPreviewDialog
         open={pdf.open} url={pdf.url} filename={pdf.filename} loading={pdf.loading} error={pdf.error}

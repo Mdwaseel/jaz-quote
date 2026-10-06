@@ -32,6 +32,7 @@ export default function DealOutcomeCard({ quote, canWin, onChanged, toast }) {
   const open = (outcome) => setDlg({ open: true, outcome, reason: '', note: '', busy: false, error: '' });
   const lost = dlg.outcome === 'LOST';
   const canSave = !lost || (dlg.reason && (dlg.reason !== 'Other' || dlg.note.trim()));
+  const cancelled = quote.Workflow?.WorkflowStatus === 'CANCELLED';
 
   return (
     <MainCard title="Deal outcome" sx={{ mb: 2.5 }}>
@@ -50,7 +51,11 @@ export default function DealOutcomeCard({ quote, canWin, onChanged, toast }) {
       {deal.Status === 'WON' && deal.Note && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontStyle: 'italic' }}>“{deal.Note}”</Typography>
       )}
-      {deal.Status === 'OPEN' ? (
+      {cancelled ? (
+        <Typography variant="body2" color="text.secondary">
+          The quotation is cancelled, so the deal outcome can't be changed. Restore it to update the outcome.
+        </Typography>
+      ) : deal.Status === 'OPEN' ? (
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
           <Button variant="contained" color="success" startIcon={<ThumbUpAltOutlinedIcon />} disabled={!canWin} onClick={() => open('WON')}>
             Deal done
@@ -62,7 +67,7 @@ export default function DealOutcomeCard({ quote, canWin, onChanged, toast }) {
       ) : (
         <Button size="small" onClick={() => save('OPEN')}>Reopen</Button>
       )}
-      {deal.Status === 'OPEN' && !canWin && (
+      {!cancelled && deal.Status === 'OPEN' && !canWin && (
         <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1 }}>
           “Deal done” is available once the quotation is approved.
         </Typography>

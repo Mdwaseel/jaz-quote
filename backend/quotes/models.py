@@ -90,6 +90,12 @@ class Quotation(models.Model):
     deal_closed_at = models.DateTimeField(null=True, blank=True)
     deal_closed_by = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     workflow_status = models.CharField(max_length=24, choices=WORKFLOW_CHOICES, default=DRAFT)
+    # Cancellation — a cancelled quotation is kept (and can be restored); only its status changes.
+    cancel_reason = models.CharField(max_length=80, blank=True, default="")
+    cancel_note = models.TextField(blank=True, default="")
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    cancelled_from = models.CharField(max_length=24, blank=True, default="")  # workflow status before cancelling
     current_version = models.PositiveIntegerField(default=0)
     # Latest version that was fully approved (the only one that may be downloaded).
     approved_version = models.PositiveIntegerField(null=True, blank=True)

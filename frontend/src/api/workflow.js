@@ -47,7 +47,9 @@ export const publicEsignSign = async (token, payload) =>
   (await (await publicFetch(`${encodeURIComponent(token)}/sign`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
   })).json()).data;
-export const cancelQuote = async (QuotationNumber) => data(await axios.post(Endpoints.InActive_Quote, { QuotationNumber }));
+// Cancelling never deletes: the quotation is kept as "Cancelled" with the reason, and can be restored.
+export const cancelQuote = async (QuotationNumber, Reason, Note) => data(await axios.post(Endpoints.Cancel_Quote, { QuotationNumber, Reason, Note }));
+export const restoreQuote = async (QuotationNumber, Note) => data(await axios.post(Endpoints.Restore_Quote, { QuotationNumber, Note }));
 export const confirmQuote = async (QuoteNumber) => data(await axios.post(Endpoints.Confirm_Quote, { QuoteNumber }));
 
 export const listApprovals = async (scope, filters = {}) => data(await axios.post(Endpoints.Approvals_List, { scope, ...filters }));

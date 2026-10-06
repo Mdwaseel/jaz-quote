@@ -12,7 +12,7 @@ export const STATUS_META = {
   EDITING: { label: 'Editing', color: 'info' },
   DOWNLOADED: { label: 'Downloaded', color: 'success' },
   EXPIRED: { label: 'Expired', color: 'default' },
-  CANCELLED: { label: 'Cancelled', color: 'default' }
+  CANCELLED: { label: 'Cancelled', color: 'error' }
 };
 
 export const REQUEST_STATUS_META = {

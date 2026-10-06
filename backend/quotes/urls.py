@@ -13,7 +13,9 @@ urlpatterns = [
     path("quote/getListofQuotation", views.get_quote_list),
     path("quote/getquote", views.get_quote),
     path("quote/getconfirmquote", views.confirm_quote),
-    path("quote/deletequote", views.delete_quote),
+    path("quote/deletequote", views.delete_quote),  # cancels (never deletes)
+    path("quote/cancel", views.delete_quote),
+    path("quote/restore", views.restore_quote),
     path("quote/editquote", views.edit_quote),
     path("quote/converthtmltopdfanduploadasync", views.download_quote),
     path("quote/preview", views.preview_quote),

@@ -158,6 +158,8 @@ def by_token(token, allow_signed=False):
             raise WorkflowError("This quotation has already been signed. Thank you!", 410)
         if sig.expires_at and sig.expires_at < timezone.now():
             raise WorkflowError("This link has expired. Please ask your JAZ representative for a copy.", 410)
+        if sig.quotation.workflow_status == Q.CANCELLED:
+            raise WorkflowError("This quotation has been cancelled. Please contact your JAZ representative.", 410)
         if sig.version_number != sig.quotation.current_version:
             raise WorkflowError("This quotation has changed since you signed it. Please contact your JAZ representative.", 410)
         return sig
@@ -170,6 +172,8 @@ def by_token(token, allow_signed=False):
     if sig.status != CS.SENT:
         raise WorkflowError("This signing link is no longer active.", 410)
     quote = sig.quotation
+    if quote.workflow_status == Q.CANCELLED:
+        raise WorkflowError("This quotation has been cancelled. Please contact your JAZ representative.", 410)
     if sig.version_number != quote.current_version or not signable(quote)[0]:
         raise WorkflowError("This quotation has changed since the link was sent. Please ask for a new link.", 410)
     return sig

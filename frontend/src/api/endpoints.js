@@ -23,6 +23,8 @@ export const Endpoints = {
   Preview_Quote: 'quote/preview',
   Rebate_Quote: 'quote/editquote',
   InActive_Quote: 'quote/deletequote',
+  Cancel_Quote: 'quote/cancel',
+  Restore_Quote: 'quote/restore',
   Confirm_Quote: 'quote/getconfirmquote',
   Update_Quote: 'quote/update',
   Quote_Rules: 'quote/rules',

@@ -20,6 +20,7 @@ from .models import (
     ApprovalRequest as AR,
     ApprovalStep as AS,
     Customer,
+    CustomerSignature as CS,
     Quotation as Q,
     QuotationEvent,
     QuotationVersion,
@@ -779,14 +780,112 @@ def record_download(user, quote):
            f"Rs. {_f(quote.include_tax):,.0f}).")
 
 
+# Why a quotation is cancelled — a fixed list so cancellations can be reviewed.
+CANCEL_REASONS = [
+    "Customer dropped the project",
+    "Customer chose another vendor",
+    "Budget not approved",
+    "Project on hold / postponed",
+    "Duplicate quotation",
+    "Wrong details — re-quoted",
+    "Other",
+]
+
+
+def _manages(user, quote):
+    """True when ``user`` sits above the quotation's creator in the hierarchy."""
+    return bool(quote.created_by_id) and quote.created_by_id in set(H.descendant_ids(user))
+
+
+def can_cancel(user, quote):
+    return quote.workflow_status != Q.CANCELLED and (
+        quote.created_by_id == user.id or H.is_admin(user) or _manages(user, quote))
+
+
+def can_restore(user, quote):
+    if quote.workflow_status != Q.CANCELLED:
+        return False
+    if H.is_admin(user) or _manages(user, quote):
+        return True
+    # A creator whose submitted quotations are locked (BDM / Sr. BDM) can't reopen one
+    # themselves — that would bypass the RM edit approval.
+    return quote.created_by_id == user.id and _role(user) not in H.LOCKED_CREATOR_ROLES
+
+
+def _people_to_tell(user, quote):
+    creator = quote.created_by
+    targets = [creator]
+    if creator and _role(creator) in H.LOCKED_CREATOR_ROLES:
+        targets.append(H.resolve_approver(creator, H.RM))
+    return [t for t in targets if t and t.id != user.id]
+
+
 @transaction.atomic
-def cancel_quotation(user, quote):
-    if quote.created_by_id != user.id and not H.is_admin(user):
-        raise WorkflowError("Only the creator or an Admin can cancel this quotation.", 403)
-    _cancel_open(quote, user, "Quotation cancelled.")
+def cancel_quotation(user, quote, reason="", note=""):
+    """Cancel without deleting: the quotation, its versions and history are all kept."""
+    quote = Q.objects.select_for_update(of=("self",)).select_related("customer", "created_by").get(pk=quote.pk)
+    if quote.workflow_status == Q.CANCELLED:
+        raise WorkflowError("This quotation is already cancelled.", 409)
+    if not can_cancel(user, quote):
+        raise WorkflowError("Only the creator, their managers or an Admin can cancel this quotation.", 403)
+    reason, note = (reason or "").strip(), (note or "").strip()
+    if reason not in CANCEL_REASONS:
+        raise WorkflowError("Choose why the quotation is being cancelled.")
+    if reason == "Other" and not note:
+        raise WorkflowError("Please describe why the quotation is being cancelled.")
+    _cancel_open(quote, user, f"Quotation cancelled — {reason}")
+    quote.customer_signatures.filter(status=CS.SENT).update(status=CS.CANCELLED)  # open e-sign links stop working
+    quote.cancelled_from = quote.workflow_status
     quote.workflow_status, quote.status = Q.CANCELLED, "Inactive"
-    quote.save(update_fields=["workflow_status", "status", "updated_at"])
-    log(quote, user, "Quotation Cancelled", status=Q.CANCELLED)
+    quote.cancel_reason, quote.cancel_note = reason, note[:2000]
+    quote.cancelled_at, quote.cancelled_by = timezone.now(), user
+    quote.save()
+    log(quote, user, "Quotation Cancelled", field="CANCEL", new={"reason": reason}, note=note, status=Q.CANCELLED)
+    notify(_people_to_tell(user, quote), quote, "cancelled",
+           f"{user.name} ({_role(user)}) cancelled quotation {quote.quotation_number} ({quote.customer.name}).\n"
+           f"Reason: {reason}{(chr(10) + 'Note: ' + note) if note else ''}\n"
+           f"Value: Rs. {_f(quote.include_tax):,.0f}. The quotation is kept and can be restored if needed.")
+    return quote
+
+
+@transaction.atomic
+def restore_quotation(user, quote, note=""):
+    """Undo a cancellation. A quotation that was fully approved comes back as it was;
+    anything else comes back editable and must be re-submitted (approvals re-evaluated)."""
+    quote = Q.objects.select_for_update(of=("self",)).select_related("customer", "created_by").get(pk=quote.pk)
+    if quote.workflow_status != Q.CANCELLED:
+        raise WorkflowError("This quotation is not cancelled.", 409)
+    if not can_restore(user, quote):
+        raise WorkflowError("Only a manager of the creator or an Admin can restore this quotation.", 403)
+    prev = quote.cancelled_from
+    if prev in (Q.APPROVED, Q.DOWNLOADED) and quote.approved_version == quote.current_version:
+        status = prev
+    elif prev == Q.DRAFT or not quote.current_version:
+        status = Q.DRAFT
+    else:
+        status = Q.EDITING
+    quote.workflow_status = status
+    quote.status = {Q.DEAL_WON: "Confirmed", Q.DEAL_LOST: "Lost"}.get(quote.deal_status, "Pending")
+    reason = quote.cancel_reason
+    quote.cancel_reason = quote.cancel_note = quote.cancelled_from = ""
+    quote.cancelled_at = quote.cancelled_by = None
+    quote.save()
+    note = (note or "").strip()
+    log(quote, user, "Quotation Restored", field="CANCEL", prev={"reason": reason}, new={"status": STATUS_LABEL[status]},
+        note=note, status=status)
+    notify(_people_to_tell(user, quote), quote, "restored",
+           f"{user.name} ({_role(user)}) restored quotation {quote.quotation_number} ({quote.customer.name}). "
+           f"Status: {STATUS_LABEL[status]}.{(' Note: ' + note) if note else ''}")
+    return quote
+
+
+def cancellation(quote):
+    if quote.workflow_status != Q.CANCELLED:
+        return None
+    return {"Reason": quote.cancel_reason, "Note": quote.cancel_note,
+            "At": quote.cancelled_at.isoformat() if quote.cancelled_at else None,
+            "By": quote.cancelled_by.name if quote.cancelled_by else None,
+            "PreviousStatus": STATUS_LABEL.get(quote.cancelled_from, "")}
 
 
 @transaction.atomic
@@ -929,8 +1028,11 @@ def quote_state(user, quote):
             "canRequestEdit": is_creator and creator_role in H.LOCKED_CREATOR_ROLES and quote.workflow_status in (
                 Q.PENDING_APPROVAL, Q.PARTIALLY_APPROVED, Q.APPROVED, Q.DOWNLOADED),
             "canDownload": can_dl, "downloadBlockedReason": dl_reason,
-            "canCancel": (is_creator or H.is_admin(user)) and quote.workflow_status not in (Q.CANCELLED,),
+            "canCancel": can_cancel(user, quote),
+            "canRestore": can_restore(user, quote),
             "canConfirm": can_dl and quote.status == "Pending",
         },
         "Approvals": current,
+        "Cancellation": cancellation(quote),
+        "CancelReasons": CANCEL_REASONS,
     }

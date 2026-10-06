@@ -336,6 +336,7 @@ def quotations(request):
             "CreatedByRole": q.created_by_role,
             "CreatedBy": q.created_by.name if q.created_by else "",
             "CreatedDate": q.created_at.strftime("%Y-%m-%dT%H:%M:%S"),
+            "CancelReason": q.cancel_reason,
             "QuoteFile": q.quote_file,
             "CustomerId": q.customer.id,
         })
