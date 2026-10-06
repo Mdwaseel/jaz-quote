@@ -1,0 +1,130 @@
+# CI/CD for the JAZ Home Theatres quotation app
+#   every push / PR  → backend tests + frontend build
+#   push to main     → (if tests pass) deploy to the VPS, then smoke-test the live site
+#
+# One-time setup: add the repository secret VPS_SSH_KEY (private half of the
+# "jazquote-ci-deploy" key). That key can only run /opt/jaz-deploy/deploy.sh on
+# the server (forced command), which backs up the DB, builds, swaps and rolls back
+# automatically if the new release is unhealthy.
+name: CI / Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-{0}', github.ref) || 'production' }}
+  cancel-in-progress: false
+
+# The deploy job only runs when the repository variable DEPLOY_ENABLED is "true", and the
+# target comes from repository variables — nothing here points at any server by default:
+#   VPS_HOST       the server's IP / hostname
+#   VPS_HOST_KEY   its pinned SSH host key line ("<host> ssh-ed25519 AAAA…"); deploy aborts if it changes
+#   SITE_URL       the live site, e.g. https://quotes.jazhometheatres.com
+env:
+  VPS_HOST: ${{ vars.VPS_HOST }}
+  VPS_HOST_KEY: ${{ vars.VPS_HOST_KEY }}
+  SITE_URL: ${{ vars.SITE_URL }}
+
+jobs:
+  test:
+    name: Test & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Same database engine as production — SQLite ignores row locks and once hid
+    # a PostgreSQL-only crash in the approval action.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jaz
+          POSTGRES_PASSWORD: jaz-ci
+          POSTGRES_DB: jaz
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U jaz" --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"   # same as backend/Dockerfile
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Backend checks & tests
+        working-directory: backend
+        env:
+          OTP_ENABLED: "false"
+          DB_ENGINE: postgres
+          DB_NAME: jaz
+          DB_USER: jaz
+          DB_PASSWORD: jaz-ci
+          DB_HOST: 127.0.0.1
+          DB_PORT: "5432"
+        run: |
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+          python manage.py test -v 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+  deploy:
+    name: Deploy to VPS
+    needs: test
+    if: vars.DEPLOY_ENABLED == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ vars.SITE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$VPS_SSH_KEY" ]; then
+            echo "::error::Repository secret VPS_SSH_KEY is not set (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_HOST_KEY" > ~/.ssh/known_hosts
+
+      - name: Deploy ${{ github.sha }}
+        run: |
+          git archive --format=tar.gz HEAD | ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 -o ConnectTimeout=30 \
+            root@"$VPS_HOST" "$GITHUB_SHA"
+
+      - name: Smoke test live site
+        run: |
+          for i in $(seq 1 10); do
+            site=$(curl -s -o /dev/null -w '%{http_code}' "$SITE_URL/")
+            api=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SITE_URL/api/quote/rules")
+            echo "site=$site api=$api"
+            [ "$site" = 200 ] && [ "$api" = 401 ] && exit 0
+            sleep 6
+          done
+          echo "::error::Live site did not pass the smoke test"
+          exit 1
+
+      - name: Clean up key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

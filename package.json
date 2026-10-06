@@ -1,0 +1,14 @@
+{
+  "name": "jaz-quotation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "JAZ Home Theatres quotation software — React + Django (monorepo)",
+  "scripts": {
+    "start": "concurrently -k -n BACKEND,FRONTEND -c blue,green \"npm:backend\" \"npm:frontend\"",
+    "backend": "cd backend && .venv\\Scripts\\python manage.py runserver 127.0.0.1:8080",
+    "frontend": "cd frontend && npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

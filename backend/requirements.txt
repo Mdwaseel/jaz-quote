@@ -1,0 +1,12 @@
+# Core
+Django>=5.1,<6.1
+Pillow>=10.4
+
+# Security
+cryptography>=43.0        # Fernet token encryption (common/crypto.py)
+argon2-cffi>=23.1         # Argon2 password hashing (used automatically when present)
+
+# Production server / static / database
+gunicorn>=22.0            # WSGI app server
+whitenoise>=6.7           # static file serving
+psycopg[binary]>=3.2      # PostgreSQL driver

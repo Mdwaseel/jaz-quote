@@ -1,0 +1,80 @@
+:root {
+  --jaz-night: #14110d;
+  --jaz-gold: #a8813d;
+  --jaz-ivory: #f3ead8;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: #f6f4ef;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* refined ag-grid to match the premium theme */
+.ag-theme-quartz {
+  --ag-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ag-border-color: #e7e1d5;
+  --ag-header-background-color: #f8f5ee;
+  --ag-header-foreground-color: #1c1813;
+  --ag-row-hover-color: #faf7f0;
+  --ag-selected-row-background-color: #f4ecdc;
+  --ag-font-size: 13px;
+  --ag-border-radius: 8px;
+  --ag-wrapper-border-radius: 8px;
+}
+
+/* ---- premium micro-animations (no JS deps) ---- */
+@keyframes brioFadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes brioFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes brioShimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes brioFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+@keyframes brioGlow {
+  0%, 100% { opacity: .45; }
+  50%      { opacity: .8; }
+}
+@keyframes brioWaveX {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+/* transform-based bar grow (no layout thrash) */
+@keyframes brioGrowX {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.brio-fade-up { animation: brioFadeUp .55s cubic-bezier(.22,1,.36,1) both; }
+.brio-fade-in { animation: brioFadeIn .6s ease both; }
+/* stagger helpers */
+.brio-stagger > * { animation: brioFadeUp .55s cubic-bezier(.22,1,.36,1) both; }
+.brio-stagger > *:nth-child(1) { animation-delay: .04s; }
+.brio-stagger > *:nth-child(2) { animation-delay: .10s; }
+.brio-stagger > *:nth-child(3) { animation-delay: .16s; }
+.brio-stagger > *:nth-child(4) { animation-delay: .22s; }
+.brio-stagger > *:nth-child(5) { animation-delay: .28s; }
+.brio-stagger > *:nth-child(6) { animation-delay: .34s; }
+.brio-stagger > *:nth-child(7) { animation-delay: .40s; }
+.brio-stagger > *:nth-child(8) { animation-delay: .46s; }
+
+.brio-shimmer-text {
+  background: linear-gradient(100deg, #f3ead8 30%, #d4ab55 45%, #f3ead8 60%);
+  background-size: 200% auto;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: brioShimmer 4.5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}

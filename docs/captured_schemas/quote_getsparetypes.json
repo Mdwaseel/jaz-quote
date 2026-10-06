@@ -1,0 +1,1 @@
+{"success":true,"statusCode":201,"data":{"spareTypes":[{"Id":1,"Type":"Door"},{"Id":2,"Type":"Cabin"},{"Id":3,"Type":"LOP"},{"Id":4,"Type":"COP"},{"Id":5,"Type":"Ceiling"},{"Id":6,"Type":"Flooring"},{"Id":7,"Type":"Lock"},{"Id":8,"Type":"SOS"}]}}

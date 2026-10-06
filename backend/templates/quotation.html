@@ -1,0 +1,336 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face { font-family: 'Montserrat'; src: url('{{ fonts_dir }}/Montserrat.ttf') format('truetype'); font-weight: 100 900; }
+  @font-face { font-family: 'Cormorant Garamond'; src: url('{{ fonts_dir }}/CormorantGaramond.ttf') format('truetype'); font-weight: 300 700; }
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Montserrat', Arial, sans-serif; font-size: 8.6pt; line-height: 1.5; color: #1c1813; }
+
+  /* Repeating page furniture (Chrome repeats position:fixed on every printed page) */
+  .bg { position: fixed; top: 0; left: 0; width: 210mm; height: 297mm; z-index: 0;
+        background: url('{{ content_url }}') center / 100% 100% no-repeat; }
+  .hdr { position: fixed; top: 11mm; left: 18mm; z-index: 1; font-size: 6.8pt; letter-spacing: .22em; color: #8d6b2f; font-weight: 600; }
+  .hdr b { color: #1c1813; letter-spacing: .12em; }
+  .ftr { position: fixed; bottom: 9mm; left: 0; width: 210mm; z-index: 1; text-align: center; font-size: 6.6pt; letter-spacing: .14em; color: #6b6255; }
+  .ftr span { color: #a8813d; padding: 0 2mm; }
+  .wm { position: fixed; top: 0; left: 0; width: 210mm; height: 297mm; z-index: 50; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .wm span { transform: rotate(-35deg); font: 700 34pt Arial, sans-serif; color: rgba(184, 67, 47, .2); letter-spacing: 2px; white-space: nowrap; }
+
+  /* Cover */
+  .cover { position: relative; z-index: 5; width: 210mm; height: 297mm; overflow: hidden;
+           background: url('{{ cover_url }}') center / 100% 100% no-repeat; break-after: page; }
+  .cover .f { position: absolute; color: #f3ead8; font-weight: 500; line-height: 1.2; letter-spacing: .02em;
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cover .f.wrap { white-space: normal; max-height: 2.4em; text-overflow: clip; }
+
+  /* Flowing chapters: thead/tfoot are spacers that repeat on every page of the chapter */
+  table.chapter { width: 100%; border-collapse: collapse; position: relative; z-index: 2; }
+  table.chapter.brk { break-before: page; }
+  table.chapter > thead > tr > td { height: 24mm; padding: 0; }
+  table.chapter > tfoot > tr > td { height: 24mm; padding: 0; }
+  table.chapter > tbody > tr > td.body { padding: 0 18mm 0 18mm; vertical-align: top; }
+
+  .eyebrow { font-size: 6.8pt; letter-spacing: .24em; color: #8d6b2f; font-weight: 600; text-transform: uppercase; margin: 0 0 1.5mm; }
+  h1 { font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 600; font-size: 26pt; line-height: 1.05; margin: 0 0 3mm; }
+  h2 { font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 600; font-size: 17pt; line-height: 1.1;
+       margin: 7mm 0 1.2mm; break-after: avoid; }
+  h2:first-child { margin-top: 0; }
+  .rule { width: 14mm; height: .5mm; background: #a8813d; margin: 0 0 3.5mm; break-after: avoid; }
+  h3 { font-size: 7.6pt; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; margin: 4.5mm 0 1.5mm; break-after: avoid; }
+  p { margin: 0 0 2.6mm; }
+  .lead { font-size: 9.6pt; line-height: 1.6; }
+  .muted { color: #6b6255; }
+  .small { font-size: 7.6pt; }
+  .gold { color: #8d6b2f; }
+  .quote-line { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 14pt; font-style: italic; color: #1c1813;
+                border-left: .6mm solid #a8813d; padding: .6mm 0 .6mm 4mm; margin: 3mm 0 4mm; break-inside: avoid; }
+
+  ul.list { margin: 0 0 2mm; padding: 0; list-style: none; }
+  ul.list li { position: relative; padding-left: 4.5mm; margin-bottom: 1.2mm; break-inside: avoid; }
+  ul.list li::before { content: ''; position: absolute; left: .5mm; top: 1.9mm; width: 1.4mm; height: 1.4mm; background: #a8813d; transform: rotate(45deg); }
+  ul.cols { columns: 2; column-gap: 8mm; }
+
+  table.grid { width: 100%; border-collapse: collapse; margin: 0 0 3mm; }
+  table.grid td, table.grid th { border: .25mm solid #e5dccb; padding: 1.7mm 2.6mm; vertical-align: top; text-align: left; }
+  table.grid tr { break-inside: avoid; }
+  table.grid th { background: #1f1a14; color: #f3ead8; font-size: 6.8pt; letter-spacing: .12em; text-transform: uppercase; font-weight: 600; }
+  table.grid td.k { background: #f8f3e8; color: #5a4520; font-weight: 600; width: 32%; }
+  table.grid td.k2 { background: #f8f3e8; color: #5a4520; font-weight: 600; width: 17%; white-space: nowrap; }
+  table.grid td.v { background: #fff; }
+  table.grid .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.grid tr.cat td { background: #f3ead8; color: #5a4520; font-weight: 700; font-size: 7pt; letter-spacing: .12em; text-transform: uppercase; }
+  table.grid tr.total td { background: #1f1a14; color: #f3ead8; font-weight: 700; }
+  table.grid tr.total td.num { color: #e6c477; font-size: 10pt; }
+  table.grid tr.sub td { background: #fbf8f1; font-weight: 600; }
+  table.boq td { font-size: 7.6pt; padding: 1.5mm 2mm; }
+  table.boq .item { font-weight: 600; }
+  table.boq .spec { color: #6b6255; font-size: 7pt; }
+  .words { background: #fbf8f1; border: .25mm solid #e5dccb; border-left: .8mm solid #a8813d; padding: 2mm 3mm; margin: 0 0 4mm; font-weight: 600; break-inside: avoid; }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5mm; margin: 0 0 2mm; }
+  .card { border: .25mm solid #e5dccb; background: #fff; padding: 2.2mm 3mm; break-inside: avoid; line-height: 1.4; }
+  .card b { display: block; font-size: 7.4pt; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 1mm; }
+  .card span { color: #5a5246; font-size: 7.8pt; }
+
+  .notice { border: .25mm solid #e5dccb; background: #fbf8f1; padding: 2.5mm 3.5mm; font-size: 7.6pt; margin: 0 0 3mm; break-inside: avoid; }
+  .sign-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-top: 6mm; break-inside: avoid; }
+  .sign { border-top: .3mm solid #1c1813; padding-top: 2mm; min-height: 30mm; position: relative; }
+  .sign .img { position: absolute; bottom: 100%; left: 0; height: 18mm; display: flex; align-items: flex-end; }
+  .sign .img img { max-height: 18mm; max-width: 60mm; object-fit: contain; }
+  .sign b { display: block; font-size: 7.4pt; letter-spacing: .12em; text-transform: uppercase; }
+  /* Acceptance: one whole page, never split across pages */
+  .accept { break-inside: avoid; page-break-inside: avoid; }
+  .accept .sign-row { margin-top: 38mm; }
+  .accept .sign { min-height: 34mm; }
+  .sign-lines { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin-top: 14mm; }
+  .sign-lines span { border-top: .25mm solid #c9bfa9; padding-top: 1.2mm; font-size: 7pt; letter-spacing: .12em; text-transform: uppercase; color: #6b6255; }
+</style>
+</head>
+<body>
+
+<div class="bg"></div>
+<div class="hdr">QUOTATION &nbsp;<b>{{ quotation_number }}</b></div>
+<div class="ftr">{{ company.name|upper }}{% if company_location %}<span>|</span>{{ company_location }}{% endif %}{% if company.phone %}<span>|</span>{{ company.phone }}{% endif %}{% if company.email %}<span>|</span>{{ company.email }}{% endif %}{% if company.website %}<span>|</span>{{ company.website }}{% endif %}</div>
+{% if watermark %}<div class="wm"><span>{{ watermark }}</span></div>{% endif %}
+
+<!-- ================= COVER ================= -->
+<section class="cover">
+  <span class="f" style="{{ cover.name.style }}">{{ cover.name.text }}</span>
+  <span class="f" style="{{ cover.mobile.style }}">{{ cover.mobile.text }}</span>
+  <span class="f" style="{{ cover.email.style }}">{{ cover.email.text }}</span>
+  <span class="f" style="{{ cover.city.style }}">{{ cover.city.text }}</span>
+  <span class="f wrap" style="{{ cover.address.style }}">{{ cover.address.text }}</span>
+  <span class="f" style="{{ cover.date.style }}">{{ cover.date.text }}</span>
+  <span class="f" style="{{ cover.model.style }}">{{ cover.model.text }}</span>
+  <span class="f" style="{{ cover.number.style }}">{{ cover.number.text }}</span>
+  <span class="f" style="{{ cover.state.style }}">{{ cover.state.text }}</span>
+</section>
+
+<!-- ================= 1. WELCOME + ABOUT + DETAILS ================= -->
+<table class="chapter"><thead><tr><td></td></tr></thead><tfoot><tr><td></td></tr></tfoot><tbody><tr><td class="body">
+  <div class="eyebrow">Your space · Our expertise · Cinematic experience</div>
+  <h1>A cinema designed around you.</h1>
+  <div class="rule"></div>
+  <p class="lead">Dear {{ first_name|default:"Sir / Madam" }},</p>
+  <p class="lead">Thank you for inviting {{ company.name }} to design your private cinema. This quotation sets out the recommended
+    system for {% if room %}your {{ room|lower }}{% else %}your space{% endif %}, the scope of work, our commercial offer and the terms that govern the project.
+    Every element is engineered around your room and the experience you want.</p>
+
+  <h2>About {{ company.name }}</h2>
+  <div class="rule"></div>
+  {% for para in about %}<p>{{ para }}</p>{% endfor %}
+  <div class="quote-line">We don't sell a collection of products. We create a complete cinema experience.</div>
+
+  <div class="cards">
+    {% for title, text in principles %}<div class="card"><b>{{ title }}</b><span>{{ text }}</span></div>{% endfor %}
+  </div>
+
+  <h2>Quotation details</h2>
+  <div class="rule"></div>
+  <table class="grid">
+    {% for row in details %}<tr>{% for k, v in row %}<td class="k2">{{ k }}</td><td class="v">{{ v|default:"—" }}</td>{% endfor %}{% if row|length == 1 %}<td class="k2"></td><td class="v"></td>{% endif %}</tr>{% endfor %}
+  </table>
+  {% if notes %}<div class="notice"><b>Project notes:</b> {{ notes|linebreaksbr }}</div>{% endif %}
+</td></tr></tbody></table>
+
+<!-- ================= 2. SPECIFICATION + SCOPE ================= -->
+<table class="chapter brk"><thead><tr><td></td></tr></thead><tfoot><tr><td></td></tr></tfoot><tbody><tr><td class="body">
+  <div class="eyebrow">{{ model }}</div>
+  <h2>Recommended home theatre specification</h2>
+  <div class="rule"></div>
+  <table class="grid">
+    {% for r in spec %}<tr><td class="k">{{ r.Label }}</td><td class="v">{{ r.Value }}</td></tr>{% endfor %}
+  </table>
+
+  <h2>System &amp; interior scope</h2>
+  <div class="rule"></div>
+  <ul class="list cols">{% for s in scope %}<li>{{ s }}</li>{% endfor %}</ul>
+
+  <h2>Design &amp; finishes</h2>
+  <div class="rule"></div>
+  <table class="grid">
+    {% for r in finishes %}<tr><td class="k">{{ r.Label }}</td><td class="v">{{ r.Value }}</td></tr>{% endfor %}
+  </table>
+
+  <h2>Standard service &amp; performance features</h2>
+  <div class="rule"></div>
+  <ul class="list cols">{% for s in standard_features %}<li>{{ s }}</li>{% endfor %}</ul>
+</td></tr></tbody></table>
+
+<!-- ================= 3. COMMERCIAL OFFER ================= -->
+<table class="chapter brk"><thead><tr><td></td></tr></thead><tfoot><tr><td></td></tr></tfoot><tbody><tr><td class="body">
+  <div class="eyebrow">Commercial</div>
+  <h2>Commercial offer</h2>
+  <div class="rule"></div>
+  <table class="grid">
+    <thead><tr><th>Description</th><th class="num">Actual Price (₹)</th><th class="num">Offer Price (₹)</th><th class="num">GST %</th><th class="num">GST (₹)</th><th class="num">Total (₹)</th></tr></thead>
+    <tbody>
+      {% for c in categories %}
+      <tr><td>{{ c.name }}</td><td class="num">{{ c.list }}</td><td class="num">{{ c.offer }}</td><td class="num">{{ c.gst }}</td><td class="num">{{ c.tax }}</td><td class="num">{{ c.total }}</td></tr>
+      {% endfor %}
+      <tr class="sub"><td>Total — {{ model }}</td><td class="num">{{ list_total }}</td><td class="num">{{ offer_total }}</td><td class="num"></td><td class="num">{{ tax_total }}</td><td class="num"></td></tr>
+      <tr class="total"><td colspan="4">GRAND TOTAL <span style="font-weight:500;font-size:7pt;letter-spacing:.06em">(inclusive of applicable GST)</span></td><td colspan="2" class="num">{{ grand_total }}</td></tr>
+    </tbody>
+  </table>
+  <div class="words">{{ grand_words }}</div>
+  {% if discount %}<p class="small muted">Offer price includes a project discount of {{ discount_amount }} ({{ discount_pct }}%) on the actual price. {{ gst_label }} is charged on the offer price.</p>{% endif %}
+
+  {% if optional %}
+  <h3>Optional upgrades — available on request (not included in the total)</h3>
+  <table class="grid boq">
+    <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Unit Price (₹)</th><th class="num">Amount (₹)</th></tr></thead>
+    <tbody>
+      {% for o in optional %}<tr><td><div class="item">{{ o.name }}</div>{% if o.spec or o.brand %}<div class="spec">{{ o.spec }}{% if o.spec and o.brand %} · {% endif %}{{ o.brand }}</div>{% endif %}</td>
+        <td class="num">{{ o.qty }} {{ o.unit }}</td><td class="num">{{ o.price }}</td><td class="num">{{ o.amount }}</td></tr>{% endfor %}
+      <tr class="sub"><td colspan="3">Optional upgrades (ex-GST)</td><td class="num">{{ optional_total }}</td></tr>
+    </tbody>
+  </table>
+  {% endif %}
+
+</td></tr></tbody></table>
+
+<!-- ================= 4. DETAILED BOQ ================= -->
+<table class="chapter brk"><thead><tr><td></td></tr></thead><tfoot><tr><td></td></tr></tfoot><tbody><tr><td class="body">
+  <div class="eyebrow">{{ model }}</div>
+  <h2>Detailed bill of quantities</h2>
+  <div class="rule"></div>
+  <p class="small muted">Final models to be confirmed after room survey, design approval and availability.</p>
+  <table class="grid boq">
+    <thead><tr><th style="width:5%">#</th><th>Item &amp; specification</th><th style="width:24%">Suggested model / class</th><th class="num" style="width:9%">Qty</th><th class="num" style="width:13%">Unit Price (₹)</th><th class="num" style="width:7%">GST</th><th class="num" style="width:14%">Amount (₹)</th></tr></thead>
+    <tbody>
+      {% for g in boq %}
+      <tr class="cat"><td colspan="7">{{ g.category }}</td></tr>
+      {% for l in g.lines %}
+      <tr><td>{{ l.no }}</td><td><div class="item">{{ l.name }}</div>{% if l.spec %}<div class="spec">{{ l.spec }}</div>{% endif %}{% if l.remarks %}<div class="spec"><i>{{ l.remarks }}</i></div>{% endif %}</td>
+        <td>{{ l.brand }}</td><td class="num">{{ l.qty }} {{ l.unit }}</td><td class="num">{{ l.price }}</td><td class="num">{{ l.gst }}%</td><td class="num">{{ l.amount }}</td></tr>
+      {% endfor %}
+      {% endfor %}
+      <tr class="sub"><td colspan="6">Sub-total (ex-GST, before project discount)</td><td class="num">{{ list_total }}</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">Recommended architecture is subject to room dimensions, seating count and customer budget. JAZ is brand-flexible — equivalent products may be proposed where they better suit the room, design or experience.</p>
+</td></tr></tbody></table>
+
+<!-- ================= 5. DELIVERY, WARRANTY, SCOPE ================= -->
+<table class="chapter brk"><thead><tr><td></td></tr></thead><tfoot><tr><td></td></tr></tfoot><tbody><tr><td class="body">
+  <div class="eyebrow">Terms, scope &amp; handover</div>
+  <h2>Payment terms</h2>
+  <div class="rule"></div>
+  <table class="grid">
+    <thead><tr><th style="width:14%">Share</th><th>Stage</th><th class="num" style="width:26%">Amount (₹, incl. GST)</th></tr></thead>
+    <tbody>{% for t in terms %}<tr><td><b>{{ t.pct }}%</b></td><td>{{ t.name }}</td><td class="num">{{ t.amount }}</td></tr>{% endfor %}</tbody>
+  </table>
+  <div class="notice"><b>Procurement note:</b> {{ procurement_note }}</div>
+  {% if timeline %}<p><span class="gold"><b>Project timeline:</b></span> {{ timeline }}, subject to approved drawings and equipment availability.</p>{% endif %}
+  {% if sales_note %}<p class="small"><b>Note:</b> {{ sales_note }}</p>{% endif %}
+
+  <h2>Project delivery</h2>
+  <div class="rule"></div>
+  <table class="grid">{% for k, v in delivery_stages %}<tr><td class="k">{{ k }}</td><td class="v">{{ v }}</td></tr>{% endfor %}</table>
+  <ul class="list">{% for s in project_delivery %}<li>{{ s }}</li>{% endfor %}</ul>
+
+  <h2>Warranty &amp; after-sales</h2>
+  <div class="rule"></div>
+  <ul class="list">
+    <li>AV equipment warranty: as per respective manufacturer warranty terms.</li>
+    <li>Installation workmanship warranty: <b>{{ workmanship_yr }} year{{ workmanship_yr|pluralize }}</b> from system handover, subject to approved operating conditions.</li>
+    <li>JAZ will provide commissioning, system demonstration and handover documentation.</li>
+    <li>AMC / annual maintenance support after the warranty period: <b>Comprehensive AMC at {{ amc_comp }}%</b> of the system value per year
+      (preventive visits, system check-ups and complaint attendance with parts covered), or <b>Preventive AMC at {{ amc_prev }}%</b>
+      (preventive visits and complaint attendance; parts chargeable).</li>
+    <li>Replacement parts, consumables and accidental damage are chargeable unless covered by warranty.</li>
+    <li>Warranty does not cover damage caused by electrical surge, water ingress, misuse, unauthorised modification, physical damage or third-party intervention.</li>
+  </ul>
+
+  <h2>Customer scope / site requirements</h2>
+  <div class="rule"></div>
+  <ul class="list">{% for s in customer_scope %}<li>{{ s }}</li>{% endfor %}</ul>
+
+  <h2>JAZ scope of work</h2>
+  <div class="rule"></div>
+  <ul class="list cols">{% for s in jaz_scope %}<li>{{ s }}</li>{% endfor %}</ul>
+
+  <h2>Exclusions unless specifically quoted</h2>
+  <div class="rule"></div>
+  <ul class="list">{% for s in exclusions %}<li>{{ s }}</li>{% endfor %}</ul>
+
+  <h2>Notes</h2>
+  <div class="rule"></div>
+  <ul class="list">{% for s in jaz_notes %}<li>{{ s }}</li>{% endfor %}</ul>
+</td></tr></tbody></table>
+
+<!-- ================= 6. POLICY, BANK, ACCEPTANCE ================= -->
+<table class="chapter brk"><thead><tr><td></td></tr></thead><tfoot><tr><td></td></tr></tfoot><tbody><tr><td class="body">
+  <div class="eyebrow">Order confirmation</div>
+  <h2>Order confirmation, procurement &amp; cancellation policy</h2>
+  <div class="rule"></div>
+  <table class="grid">{% for k, v in order_policy %}<tr><td class="k">{{ k }}</td><td class="v">{{ v }}</td></tr>{% endfor %}</table>
+
+  {% if bank %}
+  <h2>Bank details</h2>
+  <div class="rule"></div>
+  <table class="grid">
+    <tr><td class="k">Account name</td><td class="v"><b>{{ bank.account_holder_name }}</b></td></tr>
+    <tr><td class="k">Bank</td><td class="v">{{ bank.bank_name }}</td></tr>
+    <tr><td class="k">Branch</td><td class="v">{{ bank.branch_name }}</td></tr>
+    <tr><td class="k">Account number</td><td class="v"><b>{{ bank.account_number }}</b></td></tr>
+    <tr><td class="k">IFSC</td><td class="v">{{ bank.ifsc_code }}</td></tr>
+    {% if company.gstin %}<tr><td class="k">GSTIN</td><td class="v">{{ company.gstin }}</td></tr>{% endif %}
+    {% if company.pan %}<tr><td class="k">PAN</td><td class="v">{{ company.pan }}</td></tr>{% endif %}
+  </table>
+  <p class="small muted">Please share the transaction reference with your JAZ representative{% if company.email %} or at {{ company.email }}{% endif %}, quoting the quotation number {{ quotation_number }}. No cash payments are accepted.</p>
+  {% endif %}
+
+</td></tr></tbody></table>
+
+<!-- ================= 7. CUSTOMER ACCEPTANCE — always its own, unbroken page ================= -->
+<table class="chapter brk"><thead><tr><td></td></tr></thead><tfoot><tr><td></td></tr></tfoot><tbody><tr><td class="body">
+  <div class="accept">
+    <div class="eyebrow">Order confirmation</div>
+    <h1>Customer acceptance</h1>
+    <div class="rule"></div>
+    <p class="lead">This page confirms the order. Please sign, date and return it with the advance payment.</p>
+
+    <table class="grid">
+      <tr><td class="k2">Quotation No.</td><td class="v"><b>{{ quotation_number }}</b></td><td class="k2">Date</td><td class="v">{{ date }}</td></tr>
+      <tr><td class="k2">Customer</td><td class="v">{{ customer.name }}</td><td class="k2">Valid until</td><td class="v">{{ valid_until }}</td></tr>
+      <tr><td class="k2">Project</td><td class="v" colspan="3">{{ model }}{% if room %} — {{ room }}{% endif %}</td></tr>
+      <tr><td class="k2">Project address</td><td class="v" colspan="3">{{ address|default:"—" }}{% if customer.city %}, {{ customer.city }}{% endif %}{% if customer.state %}, {{ customer.state }}{% endif %}</td></tr>
+    </table>
+
+    <table class="grid">
+      <tr class="total"><td>Grand total (inclusive of applicable GST)</td><td class="num">{{ grand_total }}</td></tr>
+    </table>
+    <div class="words">{{ grand_words }}</div>
+
+    <h3>Payment schedule</h3>
+    <table class="grid">
+      {% for t in terms %}<tr><td style="width:14%"><b>{{ t.pct }}%</b></td><td>{{ t.name }}</td><td class="num" style="width:26%">{{ t.amount }}</td></tr>{% endfor %}
+    </table>
+
+    <div class="notice"><b>Customer acknowledgement:</b> {{ acknowledgement }}</div>
+    <p class="small">I/We accept this quotation, the detailed BOQ, the specification and all terms set out in this document, and confirm the order with {{ company.name }}.</p>
+
+    <div class="sign-row">
+      <div class="sign">
+        {% if customer_sign %}<div class="img"><img src="{{ customer_sign }}" alt="Customer signature" /></div>{% endif %}
+        <b>Customer signature</b>
+        <span class="small muted">{{ customer.name }}{% if sign_note %} · {{ sign_note }}{% endif %}</span>
+        <div class="sign-lines"><span>Date</span><span>Place</span></div>
+      </div>
+      <div class="sign">
+        {% if signatory_sign %}<div class="img"><img src="{{ signatory_sign }}" alt="Authorised signatory" /></div>{% endif %}
+        <b>For {{ company.name }}</b>
+        <span class="small muted">Authorised signatory{% if sales_by %} · {{ sales_by }}{% endif %}</span>
+        <div class="sign-lines"><span>Date</span><span>Company seal</span></div>
+      </div>
+    </div>
+  </div>
+</td></tr></tbody></table>
+
+</body>
+</html>

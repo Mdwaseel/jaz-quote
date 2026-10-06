@@ -1,0 +1,23 @@
+# JAZ — Gunicorn systemd unit.
+# Copy to /etc/systemd/system/jaz.service, then:
+#   systemctl daemon-reload && systemctl enable --now jaz
+# Logs:  journalctl -u jaz -f
+
+[Unit]
+Description=JAZ quotation Gunicorn (Django API)
+After=network.target postgresql.service
+
+[Service]
+User=jaz
+Group=www-data
+WorkingDirectory=/var/www/jaz/backend
+EnvironmentFile=/var/www/jaz/backend/.env
+ExecStart=/var/www/jaz/backend/.venv/bin/gunicorn brio.wsgi:application \
+    --bind 127.0.0.1:8001 \
+    --workers 3 \
+    --timeout 120
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
