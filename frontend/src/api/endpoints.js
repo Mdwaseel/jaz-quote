@@ -75,6 +75,8 @@ export const Endpoints = {
   Admin_Catalog_Create: 'admin-api/catalog/create',
   Admin_Catalog_Delete: 'admin-api/catalog/delete',
   Admin_Catalog_Refs: 'admin-api/catalog/refs',
+  Admin_Catalog_Import: 'admin-api/catalog/import',
+  Admin_Catalog_Export: 'admin-api/catalog/export',
   Admin_Company: 'admin-api/company',
   Admin_Company_Update: 'admin-api/company/update',
   Admin_Quotations: 'admin-api/quotations',

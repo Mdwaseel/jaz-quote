@@ -16,6 +16,17 @@ export const requestEdit = async (QuotationNumber, Reason, RequestedChanges) =>
   data(await axios.post(Endpoints.Request_Edit, { QuotationNumber, Reason, RequestedChanges }));
 export const setSignature = async (QuotationNumber, Kind, Image) =>
   data(await axios.post(Endpoints.Quote_Signature, { QuotationNumber, Kind, Image }));
+// Products & prices CSV: preview (apply=false) or import (apply=true); file is a data: URL.
+export const importProductsCsv = async (file, apply) => data(await axios.post(Endpoints.Admin_Catalog_Import, { file, apply }));
+export const exportProductsCsv = async () => {
+  const res = await axios.post(Endpoints.Admin_Catalog_Export, {}, { responseType: 'blob' });
+  const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `jaz-products-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
 export const getCompany = async () => data(await axios.post(Endpoints.Admin_Company, {}));
 export const saveCompany = async (payload) => data(await axios.post(Endpoints.Admin_Company_Update, payload));
 export const sendEsign = async (QuotationNumber, Email) => data(await axios.post(Endpoints.Esign_Send, { QuotationNumber, Email }));

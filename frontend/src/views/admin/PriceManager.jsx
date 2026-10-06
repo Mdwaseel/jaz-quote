@@ -12,6 +12,8 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import MainCard from '../../components/MainCard';
 import RowsEditor from '../quotation/builder/RowsEditor';
+import CsvImportDialog from './CsvImportDialog';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { inr } from '../../components/workflow/format';
 import { fetchCatalog, updateCatalog, createCatalog, deleteCatalog, fetchCatalogRefs } from '../../store/slices/adminSlice';
 
@@ -36,6 +38,7 @@ export default function PriceManager() {
   const [catFilter, setCatFilter] = useState('');
   const [toast, setToast] = useState({ open: false, msg: '', sev: 'success' });
   const [dialog, setDialog] = useState(null); // {mode: 'create'|'edit', kind, data}
+  const [csvOpen, setCsvOpen] = useState(false);
 
   const type = TABS[tab];
   const rows = catalog[type.kind] || [];
@@ -115,7 +118,10 @@ export default function PriceManager() {
             List prices are the starting point on every quotation. Sales can set any price per line; pricing below list counts towards the discount that needs approval. Changes apply to new quotations immediately.
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>Add {type.singular}</Button>
+        <Stack direction="row" spacing={1}>
+          <Button variant="outlined" startIcon={<UploadFileOutlinedIcon />} onClick={() => setCsvOpen(true)}>Import CSV</Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>Add {type.singular}</Button>
+        </Stack>
       </Box>
 
       <MainCard contentSx={{ p: 0 }}>
@@ -268,6 +274,12 @@ export default function PriceManager() {
       </MainCard>
 
       <CatalogDialog dialog={dialog} setDialog={setDialog} refs={refs} onSubmit={submitDialog} />
+      <CsvImportDialog open={csvOpen} onClose={() => setCsvOpen(false)}
+        onImported={(r) => {
+          setCsvOpen(false);
+          notify(`Imported — ${r.Created} new, ${r.Updated} updated`);
+          dispatch(fetchCatalog('product')); dispatch(fetchCatalog('category')); dispatch(fetchCatalogRefs());
+        }} />
 
       <Snackbar open={toast.open} autoHideDuration={2600} onClose={() => setToast((t) => ({ ...t, open: false }))} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <Alert severity={toast.sev} onClose={() => setToast((t) => ({ ...t, open: false }))}>{toast.msg}</Alert>

@@ -53,3 +53,74 @@ class EditUserDetailsTests(TestCase):
         r = self.client.post("/api/admin-api/users/update", json.dumps({"userId": self.other.id, "email": "x@y.com"}),
                              content_type="application/json", HTTP_AUTHORIZATION=f"Bearer {token}")
         self.assertEqual(r.status_code, 403)
+
+
+class ProductsCsvTests(TestCase):
+    """Admin → Prices & Catalog → Import CSV: preview first, all-or-nothing apply."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from catalog.models import Product, ProductCategory
+
+        cls.admin = User.objects.create_user(email="csvadmin@brio.test", password="x" * 10, name="Admin")
+        cls.admin.roles.add(Role.objects.get_or_create(name="Admin")[0])
+        cls.bdm = User.objects.create_user(email="csvbdm@brio.test", password="x" * 10, name="BDM")
+        cls.bdm.roles.add(Role.objects.get_or_create(name="BDM")[0])
+        video = ProductCategory.objects.create(name="Video", order=10, gst_percent=18)
+        cls.projector = Product.objects.create(category=video, name="4K Laser Projector", price=285000, unit="Nos")
+        cls.rack = Product.objects.create(category=video, name="AV Rack", price=24000, unit="Nos")
+
+    def post(self, path, data, user=None):
+        token = jwt.make_tokens(user or self.admin)[0]
+        return self.client.post(f"/api/admin-api/catalog/{path}", json.dumps(data), content_type="application/json",
+                                HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    def upload(self, text, apply=False, user=None, encoding="utf-8-sig"):
+        import base64
+
+        return self.post("import", {"file": base64.b64encode(text.encode(encoding)).decode(), "apply": apply}, user)
+
+    CSV = ("ID,Category,Name,Specification,Brands,Unit,List Price,GST %,Active\r\n"
+           ",Video,4K Laser Projector,,,Nos,\"₹ 2,95,000\",,yes\r\n"        # price change, matched by name
+           ",Video,AV Rack,,,Nos,24000,,yes\r\n"                             # nothing changes
+           ",Cinema Seating,Motorised Recliner,Electric recliner,,nos,38000,,\r\n")  # new + new category
+
+    def test_preview_then_apply(self):
+        from catalog.models import Product, ProductCategory
+
+        d = self.upload(self.CSV).json()["data"]
+        self.assertEqual((d["Created"], d["Updated"], d["Unchanged"], d["Errors"], d["Applied"]), (1, 1, 1, 0, False))
+        self.assertEqual(d["NewCategories"], ["Cinema Seating"])
+        upd = next(r for r in d["Rows"] if r["Action"] == "update")
+        self.assertEqual(upd["Changes"]["list_price"], ["285000", "295000"])
+        self.assertEqual(Product.objects.get(id=self.projector.id).price, 285000)  # preview writes nothing
+        d = self.upload(self.CSV, apply=True).json()["data"]
+        self.assertTrue(d["Applied"])
+        self.assertEqual(Product.objects.get(id=self.projector.id).price, 295000)
+        recliner = Product.objects.get(name="Motorised Recliner")
+        self.assertEqual((recliner.category.name, recliner.unit, recliner.is_active, recliner.gst_percent),
+                         ("Cinema Seating", "Nos", True, None))
+        self.assertTrue(ProductCategory.objects.filter(name="Cinema Seating").exists())
+
+    def test_errors_block_the_whole_import(self):
+        from catalog.models import Product
+
+        bad = self.CSV + ",Video,Broken,,,Boxes,abc,40,maybe\r\n"
+        d = self.upload(bad).json()["data"]
+        err = next(r for r in d["Rows"] if r["Action"] == "error")
+        self.assertEqual(err["Row"], 5)
+        self.assertEqual(self.upload(bad, apply=True).status_code, 400)
+        self.assertEqual(Product.objects.get(id=self.projector.id).price, 285000)  # nothing applied
+        self.assertFalse(Product.objects.filter(name="Motorised Recliner").exists())
+
+    def test_export_round_trip_excel_encoding_and_access(self):
+        r = self.post("export", {})
+        self.assertEqual(r.status_code, 200)
+        text = r.content.decode("utf-8-sig")
+        self.assertTrue(text.startswith("id,category,name"))
+        d = self.upload(text).json()["data"]  # re-importing an export changes nothing
+        self.assertEqual((d["Created"], d["Updated"], d["Errors"]), (0, 0, 0))
+        win = "name,category,list_price\r\nProjector — Reference,Video,100\r\n"  # Excel's Windows-1252 CSV
+        self.assertEqual(self.upload(win, encoding="cp1252").json()["data"]["Rows"][0]["Name"], "Projector — Reference")
+        self.assertEqual(self.upload(self.CSV, user=self.bdm).status_code, 403)
+        self.assertEqual(self.post("export", {}, user=self.bdm).status_code, 403)

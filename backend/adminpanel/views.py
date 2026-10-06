@@ -249,6 +249,44 @@ def catalog_refs(request):
     })
 
 
+# ---------------------------------------------------------------- products CSV (import / export)
+@admin_api()
+def catalog_import(request):
+    """Body: {file: <base64 of the CSV>, apply: false|true}. Always validates every row first;
+    with apply=true and no errors, writes everything in one transaction."""
+    import base64
+    import binascii
+
+    from catalog import csv_io
+
+    d = request.data or {}
+    try:
+        raw = base64.b64decode(str(d.get("file") or "").split(",")[-1], validate=True)
+    except (binascii.Error, ValueError):
+        return fail("Could not read the uploaded file.")
+    try:
+        result, new_categories = csv_io.plan(csv_io.parse(csv_io.decode(raw)))
+    except csv_io.CsvError as e:
+        return fail(str(e))
+    errors = sum(1 for r in result if r["Action"] == "error")
+    if d.get("apply"):
+        if errors:
+            return fail(f"Fix the {errors} row(s) with errors before importing.")
+        csv_io.apply(result)
+    return ok(csv_io.summary(result, new_categories, applied=bool(d.get("apply"))))
+
+
+@admin_api()
+def catalog_export(request):
+    from django.http import HttpResponse
+
+    from catalog import csv_io
+
+    resp = HttpResponse(csv_io.export_csv(), content_type="text/csv; charset=utf-8")
+    resp["Content-Disposition"] = 'attachment; filename="jaz-products.csv"'
+    return resp
+
+
 # ---------------------------------------------------------------- company profile + bank
 COMPANY_FIELDS = ("name", "tagline", "address", "city", "state", "email", "phone", "website", "gstin", "pan")
 BANK_FIELDS = {"accountHolderName": "account_holder_name", "bankName": "bank_name", "accountNumber": "account_number",

@@ -8,6 +8,8 @@ urlpatterns = [
     path("admin-api/catalog/create", views.catalog_create),
     path("admin-api/catalog/delete", views.catalog_delete),
     path("admin-api/catalog/refs", views.catalog_refs),
+    path("admin-api/catalog/import", views.catalog_import),
+    path("admin-api/catalog/export", views.catalog_export),
     path("admin-api/company", views.company),
     path("admin-api/company/update", views.company_update),
     path("admin-api/stats", views.stats),
