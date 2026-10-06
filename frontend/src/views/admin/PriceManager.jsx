@@ -138,7 +138,7 @@ export default function PriceManager() {
           {loading && rows.length === 0 ? <Skeleton variant="rounded" height={320} /> : (
             <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
               {type.kind === 'product' && (
-                <Table size="small" sx={{ minWidth: 1040 }}>
+                <Table size="small" sx={{ minWidth: 1000, '& td, & th': { px: 1 }, '& td:first-of-type, & th:first-of-type': { pl: 2 } }}>
                   <TableHead><TableRow sx={headSx}>
                     <TableCell sx={{ minWidth: 240 }}>Product</TableCell><TableCell>Category</TableCell><TableCell sx={{ minWidth: 170 }}>Brand / model class</TableCell>
                     <TableCell>Unit</TableCell><TableCell>List price (ex-GST)</TableCell><TableCell>GST</TableCell><TableCell>Active</TableCell><TableCell align="right">Actions</TableCell>
