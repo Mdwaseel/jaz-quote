@@ -2,7 +2,8 @@
 
 Every BOQ line carries the unit price the salesperson quotes (set manually) and, for
 catalog items, the catalog list price — resolved here from the catalog, never trusted
-from the client. Totals (included lines only):
+from the client. A line from the quotation's chosen version (package) is listed at that
+version's own price for the product when the version sets one. Totals (included lines only):
 
     list value ("Actual price") = Σ qty × max(list price, unit price)
     quoted                      = Σ qty × unit price
@@ -44,9 +45,9 @@ def _text(v, n):
     return str(v or "").strip()[:n]
 
 
-def normalize_items(items):
+def normalize_items(items, package_id=None):
     """Validate client BOQ lines → clean dicts with the server-resolved list price."""
-    from catalog.models import Product
+    from catalog.models import Product, package_prices
 
     from .rules import RuleError, dec
 
@@ -58,6 +59,7 @@ def normalize_items(items):
         raise RuleError(f"A quotation can have at most {MAX_ITEMS} BOQ lines.")
     ids = {int(i["ProductId"]) for i in items if isinstance(i, dict) and str(i.get("ProductId") or "").isdigit()}
     products = {p.id: p for p in Product.objects.select_related("category").filter(id__in=ids)}
+    version = package_prices(package_id) if str(package_id or "").isdigit() else {}
     out = []
     for raw in items:
         if not isinstance(raw, dict):
@@ -86,7 +88,7 @@ def normalize_items(items):
             "Unit": _text(raw.get("Unit"), 20) or (p.unit if p else "Nos"),
             "Qty": _num(qty),
             "UnitPrice": _num(unit),
-            "ListPrice": _num(_d(p.price)) if p else 0,
+            "ListPrice": _num(_d(version.get(p.id, p.price))) if p else 0,
             "GstPercent": _num(gst),
             "Optional": bool(raw.get("Optional")),
             "Remarks": _text(raw.get("Remarks"), 200),
@@ -105,7 +107,8 @@ def compute_financials(product, discount_percent=0, items=None):
     """Authoritative price of a quotation (Decimals, rupees). ``discount_percent`` is
     the additional discount on the quoted BOQ; the result's ``effective_percent`` is the
     total discount vs list that the approval rules use."""
-    items = normalize_items((product or {}).get("Items")) if items is None else items
+    product = product or {}
+    items = normalize_items(product.get("Items"), product.get("PackageId")) if items is None else items
     pct = _d(discount_percent)
     keep = (Decimal(100) - pct) / Decimal(100)
     included = [i for i in items if not i["Optional"]]

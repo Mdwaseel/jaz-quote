@@ -200,6 +200,7 @@ export default function QuoteView() {
             <Section title="Terms">
               <KV rows={[
                 ['Total discount vs list', pct(q.DiscountPercent)],
+                ...(Number(q.DiscountPercent) > 0 ? [['Discounted price', `${inr(wf.Financials.NetAmount)} + GST`]] : []),
                 ...(q.WarrentyDetails || []).map((w) => [`Warranty — ${w.TypeOfParts}`, `${w.Duration} yr`]),
                 ...(q.Amc || []).map((a) => [`AMC — ${a.AmcType}`, `${a.Duration}%`])
               ]} />
@@ -279,18 +280,15 @@ export default function QuoteView() {
               <Grid item xs={12} lg={6}>
                 <Section title="Project">
                   <KV rows={[
-                    ['Package', q.Package || p.Package], ['Configuration', q.Configuration || p.Configuration], ['Investment', p.Tier],
-                    ['Room', p.Room], ['Project type', p.ProjectType],
-                    ['Room size', [p.RoomLength, p.RoomWidth, p.RoomHeight].filter(Boolean).join(' × ') && `${[p.RoomLength, p.RoomWidth, p.RoomHeight].filter(Boolean).join(' × ')} ft`],
-                    ['Seating', [p.Seats && `${p.Seats} seats`, p.Rows && `${p.Rows} rows`].filter(Boolean).join(' · ')],
+                    ['Version', p.Version || q.Package || p.Package], ['Configuration', q.Configuration || p.Configuration],
+                    ['Room guide', p.Recommended && (p.Recommended === (q.Configuration || p.Configuration) ? `${p.Recommended} — as recommended` : `${p.Recommended} recommended`)],
+                    ['Series', p.Tier], ['Room', p.Room], ['Project type', p.ProjectType],
+                    ['Room size', [p.RoomLength, p.RoomWidth, p.RoomHeight].filter(Boolean).join(' × ')
+                      && `${[p.RoomLength, p.RoomWidth, p.RoomHeight].filter(Boolean).join(' × ')} ft${Number(p.RoomLength) * Number(p.RoomWidth) > 0 ? ` · ${Math.round(Number(p.RoomLength) * Number(p.RoomWidth) * 10) / 10} sq.ft` : ''}`],
+                    ['Seating', [p.Seats && `${p.Seats} seats`, p.Rows && `${p.Rows} rows`, p.Premium === 'yes' && 'premium build'].filter(Boolean).join(' · ')],
                     ['Screen', p.Screen], ['Site stage', p.ConstructionStage]
                   ]} />
                 </Section>
-                {(p.Spec || []).length > 0 && (
-                  <Section title="Specification">
-                    <KV rows={(p.Spec || []).map((r) => [r.Label, r.Value])} />
-                  </Section>
-                )}
               </Grid>
             </Grid>
             <Section title={`Bill of quantities · ${(p.Items || []).filter((i) => !i.Optional).length} lines`}>

@@ -10,7 +10,7 @@ import { inr } from '../../components/workflow/format';
 
 const COLUMNS = [
   ['id', 'Optional', 'Product id from “Download current catalog”. Leave blank for new products.'],
-  ['category', 'New products', 'e.g. Video, Front LCR, Cinema Seating. A new category is created if needed.'],
+  ['category', 'New products', 'e.g. Speakers & Subwoofers, Projector & Screen. A new category is created if needed.'],
   ['name', 'Yes', 'Existing products are matched by id, or by name.'],
   ['specification', 'Optional', 'Shown under the item on the quotation.'],
   ['brands', 'Optional', 'Suggested brand / model class.'],

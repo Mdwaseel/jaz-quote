@@ -31,7 +31,7 @@ export default function FinancialSummary({ f, outsideLimit, compact }) {
           {additional && <Row label={`Additional discount (${pct(f.AdditionalDiscountPercent)})`} value={`−${inr(f.AdditionalDiscountAmount)}`} tone={discountTone} />}
           {!adjustment && !additional && !totalDiscount && <Row label="Discount" value="—" />}
           {!adjustment && !additional && totalDiscount && <Row label={`Discount (${pct(f.DiscountPercent)})`} value={`−${inr(f.DiscountAmount)}`} tone={discountTone} />}
-          <Row label="Offer value (ex-GST)" value={inr(f.NetAmount)} />
+          <Row label={totalDiscount ? 'Discounted price (ex-GST)' : 'Offer value (ex-GST)'} value={inr(f.NetAmount)} />
           <Row label={gstLabel(f.GstRates)} value={inr(f.Tax)} />
         </>
       )}

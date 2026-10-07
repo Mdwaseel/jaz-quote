@@ -9,7 +9,7 @@ from unittest import mock
 
 from accounts.hierarchy import ADMIN, BDM, DIRECTOR, RM, RSD
 from accounts.models import User
-from catalog.models import Package, Product, ProductCategory
+from catalog.models import Package, PackageItem, Product, ProductCategory
 from quotes.models import ApprovalStep, CustomerSignature, Quotation
 from quotes.tests import MEDIA, EngineTestBase, fake_pdf
 
@@ -116,6 +116,16 @@ class FeatureTests(EngineTestBase):
         self.assertEqual(float(q.base_amount), 1_000_000)
         self.assertEqual(q.product_info["Items"][0]["ListPrice"], 1_000_000)
 
+    def test_chosen_versions_own_price_is_the_list_price(self):
+        pkg = Package.objects.create(name="CineLuxe 7.1.2 · Test", configuration="7.1.2", tier="CineLuxe")
+        PackageItem.objects.create(package=pkg, product=self.projector, qty=1, price=800_000)
+        info = self.items_payload([self.line(price=800_000)])["ProductInfo"]
+        q = self.create(self.daniel, 0, ProductInfo={**info, "PackageId": pkg.id})
+        self.assertEqual((float(q.base_amount), float(q.discount_percent)), (800_000, 0))  # no discount to approve
+        self.assertEqual(q.workflow_status, Quotation.APPROVED)
+        q = self.create(self.daniel, 0, ProductInfo=info)  # the same line without the version is 20% below list
+        self.assertEqual((float(q.base_amount), float(q.discount_percent)), (1_000_000, 20))
+
     def test_invalid_boq_rejected(self):
         for items in ([], [self.line(qty=0)], [self.line(GstPercent=40)], [self.line(price=-5)], [self.line(price=0)]):
             r = self.call(self.daniel, "quote/createquote", self.items_payload(items))
@@ -144,7 +154,10 @@ class FeatureTests(EngineTestBase):
         d = self.call(self.daniel, "quote/catalog", method="get").json()["data"]
         self.assertIn("4K Laser Projector", [p["Name"] for p in d["Products"]])
         self.assertEqual(d["Packages"][0]["Configuration"], "7.2.4")
-        self.assertTrue(d["DefaultSpec"] and d["DefaultScope"] and d["Brands"]["Speakers & Subwoofers"])
+        self.assertTrue(d["DefaultScope"] and d["Brands"]["Speakers & Subwoofers"])
+        self.assertNotIn("DefaultSpec", d)
+        self.assertEqual([c["Code"] for c in d["ConfigGuide"]][:2], ["5.1.2", "7.1.2"])
+        self.assertEqual((d["RoomGuide"][0]["Length"], d["RoomGuide"][0]["Width"], d["RoomGuide"][0]["Pick"]), (12, 14, "5.1.2"))
 
     def test_admin_manages_catalog(self):
         call = lambda u, path, body: self.call(u, f"admin-api/catalog/{path}", body)  # noqa: E731
@@ -160,6 +173,14 @@ class FeatureTests(EngineTestBase):
         self.assertEqual(r.status_code, 200, r.content)
         pkg = next(p for p in call(self.admin, "list", {"kind": "package"}).json()["data"] if p["Name"] == "Media Room")
         self.assertEqual(pkg["ListValue"], 1_120_000)
+        # A version can carry its own price for an item; blank follows the product's list price.
+        r = call(self.admin, "update", {"kind": "package", "id": pkg["Id"],
+                                        "items": [{"productId": pid, "qty": 2, "price": 50_000},
+                                                  {"productId": self.projector.id, "qty": 1, "price": ""}]})
+        self.assertEqual(r.status_code, 200, r.content)
+        pkg = next(p for p in call(self.admin, "list", {"kind": "package"}).json()["data"] if p["Name"] == "Media Room")
+        self.assertEqual((pkg["ListValue"], pkg["Items"][0]["PackagePrice"], pkg["Items"][1]["PackagePrice"]),
+                         (1_100_000, 50_000, None))
         self.assertEqual(call(self.admin, "delete", {"kind": "category", "id": cat}).status_code, 400)  # has products
 
     def test_company_profile_and_bank_print_on_the_pdf(self):

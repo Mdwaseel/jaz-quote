@@ -33,7 +33,7 @@ function CategoryField({ value, options, onCommit }) {
 }
 
 /** The bill of quantities: catalog items or custom lines, every price set by hand. */
-export default function BoqEditor({ items, onChange, catalog }) {
+export default function BoqEditor({ items, onChange, catalog, versionPrices = {} }) {
   const [picker, setPicker] = useState(null);
   const products = catalog?.Products || [];
   const categories = useMemo(() => {
@@ -69,7 +69,7 @@ export default function BoqEditor({ items, onChange, catalog }) {
   };
   const addProduct = (p) => {
     if (!p) return;
-    insertInCategory(lineFromProduct(p));
+    insertInCategory(lineFromProduct(p, 1, versionPrices[p.Id]));
     setPicker(null);
   };
 
@@ -101,7 +101,7 @@ export default function BoqEditor({ items, onChange, catalog }) {
               </Box>
             </li>
           )}
-          renderInput={(params) => <TextField {...params} label="Add an item from the catalog" placeholder="Search projector, LCR, recliner, acoustics…" />}
+          renderInput={(params) => <TextField {...params} label="Add an item from the catalog" placeholder="Search speakers, AV receiver, projector, screen, cables…" />}
         />
         <Button variant="outlined" startIcon={<AddIcon />} onClick={() => onChange([...items, blankLine('Other')])} sx={{ whiteSpace: 'nowrap', minHeight: 54 }}>
           Custom line
@@ -112,7 +112,7 @@ export default function BoqEditor({ items, onChange, catalog }) {
         <Box sx={{ border: '1px dashed', borderColor: 'divider', borderRadius: 2, py: 5, px: 3, textAlign: 'center' }}>
           <Typography variant="subtitle1" sx={{ mb: 0.5 }}>The BOQ is empty</Typography>
           <Typography variant="body2" color="text.secondary">
-            Pick a package on the Project step, add items from the catalog above, or add a custom line for anything not in the catalog.
+            Choose a version on the Room &amp; system step, add items from the catalog above, or add a custom line for anything not in the catalog.
           </Typography>
         </Box>
       ) : (
@@ -121,7 +121,7 @@ export default function BoqEditor({ items, onChange, catalog }) {
             <TableHead>
               <TableRow sx={{ '& th': { bgcolor: 'primary.main', color: 'primary.contrastText', fontSize: 11.5, fontWeight: 650, letterSpacing: '.04em', py: 1 } }}>
                 <TableCell sx={{ minWidth: 300 }}>Item &amp; specification</TableCell>
-                <TableCell width={190}>Brand / model class</TableCell>
+                <TableCell width={190}>Brand</TableCell>
                 <TableCell width={150}>Qty</TableCell>
                 <TableCell width={170}>Unit price (₹, ex-GST)</TableCell>
                 <TableCell width={88}>GST</TableCell>
@@ -175,7 +175,7 @@ export default function BoqEditor({ items, onChange, catalog }) {
                         <TableCell>
                           <Autocomplete freeSolo size="small" options={brands} value={l.Brand || ''}
                             onInputChange={(_, v) => update(l.key, { Brand: v })}
-                            renderInput={(params) => <TextField {...params} placeholder="e.g. Sony / JVC class" sx={cellInput} />} />
+                            renderInput={(params) => <TextField {...params} placeholder="Brand" sx={cellInput} />} />
                         </TableCell>
                         <TableCell>
                           <Stack direction="row" spacing={0.5}>

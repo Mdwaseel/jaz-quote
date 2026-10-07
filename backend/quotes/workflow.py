@@ -124,9 +124,11 @@ def _clean_sales(sales):
 
 
 # ====================================================================== payload → data
-PROJECT_TEXT = {"Package": 160, "Configuration": 20, "Tier": 60, "Room": 160, "ProjectType": 80,
-                "ConstructionStage": 60, "RoomLength": 10, "RoomWidth": 10, "RoomHeight": 10, "Seats": 10,
-                "Rows": 10, "Screen": 120, "Notes": 1000}
+# Package = the title on the cover (e.g. "CinePrime 7.1.2"), Version = the chosen handbook
+# version, Tier = its series, Recommended = the configuration the room guide suggested.
+PROJECT_TEXT = {"Package": 160, "Version": 160, "Configuration": 20, "Recommended": 20, "Tier": 60, "Room": 160,
+                "ProjectType": 80, "ConstructionStage": 60, "RoomLength": 10, "RoomWidth": 10, "RoomHeight": 10,
+                "Seats": 10, "Rows": 10, "Premium": 5, "Screen": 120, "Notes": 1000}
 
 
 def clean_product(product):
@@ -142,7 +144,6 @@ def clean_product(product):
         return [{"Label": str(r.get("Label") or "").strip()[:80], "Value": str(r.get("Value") or "").strip()[:400]}
                 for r in val[:limit] if isinstance(r, dict) and (r.get("Label") or r.get("Value"))]
 
-    out["Spec"] = rows("Spec")
     out["Finishes"] = rows("Finishes")
     scope = product.get("Scope") if isinstance(product.get("Scope"), list) else []
     out["Scope"] = [str(x).strip()[:300] for x in scope[:60] if str(x or "").strip()]
@@ -153,7 +154,7 @@ def normalize(role, d):
     """Validate a builder payload and compute authoritative pricing."""
     product = clean_product(d.get("ProductInfo"))
     try:
-        items = normalize_items((d.get("ProductInfo") or {}).get("Items"))
+        items = normalize_items((d.get("ProductInfo") or {}).get("Items"), product["PackageId"])
     except rules.RuleError as e:
         raise WorkflowError(str(e))
     base_fin = compute_financials(product, 0, items=items)

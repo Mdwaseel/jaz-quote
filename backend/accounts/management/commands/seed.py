@@ -6,7 +6,7 @@ overwrites or deletes data an admin has changed. The product catalog is only
 built when it is empty — use ``--reset-catalog`` to deliberately rebuild it.
 
     python manage.py seed                 # reference data + the first admin login
-    python manage.py seed --demo          # also a sample 7.2.4 quotation (local testing)
+    python manage.py seed --demo          # also a sample 7.1.2 quotation (local testing)
 """
 import os
 import secrets
@@ -97,31 +97,36 @@ class Command(BaseCommand):
         self.stdout.write(f"Created admin login {ADMIN_EMAIL}{shown} — change it after first sign-in.")
 
     def sample_quote(self):
-        """A 7.2.4 quotation matching the JAZ template (₹18.9 L list → ₹17.9 L offer)."""
+        """A CinePrime 7.1.2 quotation from the handbook (₹12,24,075) at a discounted price of ₹12,00,000."""
+        from decimal import Decimal
+
         from quotes import workflow as W
 
         if Quotation.objects.exists():
             return
         admin = User.objects.filter(email=ADMIN_EMAIL).first()
-        pkg = Package.objects.filter(configuration="7.2.4").prefetch_related("items__product__category").first()
+        pkg = Package.objects.filter(name="CinePrime 7.1.2 · Wharfedale Diamond").prefetch_related("items__product__category").first()
         if admin is None or pkg is None:
             return
         items = [{"ProductId": i.product_id, "Category": i.product.category.name, "Name": i.product.name,
                   "Specification": i.product.specification, "Brand": i.product.brands, "Unit": i.product.unit,
-                  "Qty": float(i.qty), "UnitPrice": float(i.product.price), "GstPercent": float(i.product.effective_gst)}
+                  "Qty": float(i.qty), "UnitPrice": float(i.unit_price), "GstPercent": float(i.product.effective_gst)}
                  for i in pkg.items.all()]
+        quoted = sum(Decimal(str(i["Qty"])) * Decimal(str(i["UnitPrice"])) for i in items)
+        price = Decimal(1200000)
         W.create_quotation(admin, {
             "CustomerName": "Sample Customer", "CustomerMobile": "9000000000", "CustomerEmail": "sample@example.com",
             "CustomerAddress": "Jubilee Hills", "CityName": "Hyderabad", "StateName": "Telangana",
             "CountryName": "India", "ZipCode": "500033",
             "ProductInfo": {
-                "PackageId": pkg.id, "Package": pkg.name, "Configuration": pkg.configuration, "Tier": pkg.tier,
+                "PackageId": pkg.id, "Package": f"{pkg.tier} {pkg.configuration}", "Version": pkg.name,
+                "Configuration": pkg.configuration, "Recommended": "7.1.2", "Tier": pkg.tier,
                 "Room": "Basement home theatre", "ProjectType": "Dedicated Home Cinema",
-                "RoomLength": "22", "RoomWidth": "16", "RoomHeight": "10", "Seats": "6", "Rows": "2",
-                "ConstructionStage": "Civil ready", "Spec": pkg.spec, "Scope": jaz.SCOPE,
-                "Finishes": jaz.DEFAULT_FINISHES, "Items": items,
+                "RoomLength": "16", "RoomWidth": "14", "RoomHeight": "10", "Seats": "6", "Rows": "1",
+                "ConstructionStage": "Civil ready", "Scope": jaz.SCOPE, "Finishes": jaz.DEFAULT_FINISHES, "Items": items,
             },
-            "DiscountPercent": 5.291,  # ₹18,90,000 list → ₹17,90,000 offer, as in the template
-            "SalesInfo": {"SalesBy": admin.name, "DeliveryAt": "8–10 weeks after site readiness", "ValidityDays": 15},
+            "DiscountPercent": float(((quoted - price) / quoted * 100).quantize(Decimal("0.000001"))),
+            "SalesInfo": {"SalesBy": admin.name, "DeliveryAt": "6–8 weeks after site readiness", "ValidityDays": 15,
+                          "DiscountMode": "price", "DiscountPrice": float(price), "DiscountPriceBasis": "ex"},
         })
-        self.stdout.write("Created a sample 7.2.4 quotation.")
+        self.stdout.write("Created a sample CinePrime 7.1.2 quotation.")

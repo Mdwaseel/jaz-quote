@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Box, Stepper, Step, StepLabel, StepButton, Button, Grid, TextField, MenuItem, Typography, Divider, Chip, Alert,
   Snackbar, CircularProgress, Table, TableBody, TableRow, TableCell, InputAdornment, IconButton, Autocomplete, Stack,
-  Tooltip, ToggleButton, ToggleButtonGroup
+  Tooltip, ToggleButton, ToggleButtonGroup, FormControlLabel, Switch
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -24,30 +24,35 @@ import { fetchBankList } from '../../store/slices/userSlice';
 import axios from '../../api/axios';
 import { Endpoints } from '../../api/endpoints';
 import { getRules, evaluateQuote, getQuote, createQuote, updateQuote, errMsg } from '../../api/workflow';
-import PackagePicker from './builder/PackagePicker';
+import SystemPicker from './builder/SystemPicker';
 import BoqEditor from './builder/BoqEditor';
 import RowsEditor from './builder/RowsEditor';
 import ScopeEditor from './builder/ScopeEditor';
-import { computeTotals, itemsPayload, lineFromProduct, uid, additionalPercent } from './builder/calc';
+import { computeTotals, itemsPayload, lineFromProduct, blankLine, uid, additionalPercent, quotedBase } from './builder/calc';
+import { recommend } from './builder/roomGuide';
 
-const steps = ['Customer', 'Project', 'BOQ & pricing', 'Scope & finishes', 'Terms', 'Review'];
+const steps = ['Customer', 'Room & system', 'BOQ & pricing', 'Scope & finishes', 'Terms', 'Review'];
 
+// Package = title on the cover, Version = the chosen handbook version, Tier = its series,
+// Recommended = what the room guide suggested for this room.
 const emptyProject = {
-  PackageId: '', Package: '', Configuration: '', Tier: '', Room: '', ProjectType: '', RoomLength: '', RoomWidth: '',
-  RoomHeight: '', Seats: '', Rows: '', Screen: '', ConstructionStage: '', Notes: ''
+  PackageId: '', Package: '', Version: '', Configuration: '', Recommended: '', Tier: '', Room: '', ProjectType: '',
+  RoomLength: '', RoomWidth: '', RoomHeight: '', Seats: '', Rows: '', Premium: '', Screen: '', ConstructionStage: '', Notes: ''
 };
+const ACOUSTICS = 'Acoustics & Seating';
+const ROOM_REQUIRED = 'Enter the room length and width.';
 
 const initialForm = {
   CustomerName: '', CustomerEmail: '', CustomerMobile: '', LandMark: '', CustomerAddress: '',
   CountryName: '', StateName: '', CityName: '', ZipCode: '',
   Project: emptyProject,
-  Spec: [], Scope: [], Finishes: [], Items: [],
+  Scope: [], Finishes: [], Items: [],
   Warranty: { Workmanship: '1' },
   AmcRates: { Comprehensive: '', Preventive: '' },
   SalesInfo: { SalesBy: '', CreatedBy: '', DeliveryAt: '', ValidityDays: 15, Remarks: '', BankId: '' },
   SignatorySign: '',
   PaymentTerms: [],
-  DiscountMode: 'pct', DiscountPercent: '0', DiscountAmount: '',
+  DiscountMode: 'pct', DiscountPercent: '0', DiscountAmount: '', DiscountPrice: '', DiscountPriceBasis: 'ex',
   Reasons: {}
 };
 
@@ -60,6 +65,7 @@ const REASON_HINT = {
 };
 
 const cloneRows = (rows) => (rows || []).map((r) => ({ Label: r.Label || '', Value: r.Value || '' }));
+const DISCOUNT_MODES = ['pct', 'amount', 'price'];
 
 export default function CreateQuote() {
   const { number: editNumber } = useParams();
@@ -81,6 +87,8 @@ export default function CreateQuote() {
   const [existing, setExisting] = useState(null);
   const [loadingEdit, setLoadingEdit] = useState(isEdit);
   const [preview, setPreview] = useState({ open: false, url: '', filename: 'quotation-preview.pdf', loading: false, error: '' });
+  // The configuration follows the room guide until the salesperson picks another one or a version.
+  const [configAuto, setConfigAuto] = useState(!isEdit);
 
   useEffect(() => {
     dispatch(fetchCountries());
@@ -88,12 +96,11 @@ export default function CreateQuote() {
     dispatch(fetchBankList());
   }, [dispatch]);
 
-  // New quotation: the standard JAZ scope, finishes and specification to start from.
+  // New quotation: the standard JAZ scope and finishes to start from.
   useEffect(() => {
     if (!catalog || isEdit) return;
     setForm((f) => ({
       ...f,
-      Spec: f.Spec.length ? f.Spec : cloneRows(catalog.DefaultSpec),
       Scope: f.Scope.length ? f.Scope : [...catalog.DefaultScope],
       Finishes: f.Finishes.length ? f.Finishes : cloneRows(catalog.DefaultFinishes),
       SalesInfo: { ...f.SalesInfo, DeliveryAt: f.SalesInfo.DeliveryAt || catalog.Timelines?.[1] || '' }
@@ -137,25 +144,31 @@ export default function CreateQuote() {
         const w = Object.fromEntries((q.WarrentyDetails || []).map((x) => [x.TypeOfParts, String(x.Duration)]));
         const a = Object.fromEntries((q.Amc || []).map((x) => [x.AmcType, String(x.Duration)]));
         const prices = Object.fromEntries((catalog.Products || []).map((x) => [x.Id, x.Price]));
+        // a line from the chosen version is listed at the version's price for it
+        const version = (catalog.Packages || []).find((x) => String(x.Id) === String(p.PackageId));
+        const own = Object.fromEntries((version?.Items || []).map((x) => [x.ProductId, x.Price]));
         setForm((f) => ({
           ...f,
           CustomerName: q.CustomerName || '', CustomerEmail: q.CustomerEmail || '', CustomerMobile: q.CustomerMobile || '',
           LandMark: q.LandMark || '', CustomerAddress: q.CustomerAddress || '',
           CountryName: q.CountryName || '', StateName: q.StateName || '', CityName: q.CityName || '', ZipCode: q.ZipCode || '',
           Project: Object.fromEntries(Object.keys(emptyProject).map((k) => [k, p[k] == null ? '' : String(p[k])])),
-          Spec: cloneRows(p.Spec), Scope: [...(p.Scope || [])], Finishes: cloneRows(p.Finishes),
+          Scope: [...(p.Scope || [])], Finishes: cloneRows(p.Finishes),
           Items: (p.Items || []).map((i) => ({
             ...i, key: uid(), Qty: String(i.Qty), UnitPrice: String(i.UnitPrice), GstPercent: String(i.GstPercent),
-            ListPrice: i.ProductId && prices[i.ProductId] != null ? prices[i.ProductId] : Number(i.ListPrice || 0)
+            ListPrice: i.ProductId && own[i.ProductId] != null ? own[i.ProductId]
+              : i.ProductId && prices[i.ProductId] != null ? prices[i.ProductId] : Number(i.ListPrice || 0)
           })),
           Warranty: { Workmanship: w.Workmanship || '1' },
           AmcRates: { Comprehensive: a.Comprehensive || '', Preventive: a.Preventive || '' },
           SalesInfo: { ...f.SalesInfo, ...s, BankId: s.BankId || '' },
           SignatorySign: s.SignatorySign || '',
           PaymentTerms: (q.PaymentTerms || []).map((t) => ({ TermName: t.TermName, TermValue: t.TermValue })),
-          DiscountMode: s.DiscountMode === 'amount' ? 'amount' : 'pct',
+          DiscountMode: DISCOUNT_MODES.includes(s.DiscountMode) ? s.DiscountMode : 'pct',
           DiscountPercent: String(Math.round(Number(p.AdditionalDiscountPercent || 0) * 10000) / 10000),
-          DiscountAmount: s.DiscountAmount ? String(s.DiscountAmount) : ''
+          DiscountAmount: s.DiscountAmount ? String(s.DiscountAmount) : '',
+          DiscountPrice: s.DiscountPrice ? String(s.DiscountPrice) : '',
+          DiscountPriceBasis: s.DiscountPriceBasis === 'incl' ? 'incl' : 'ex'
         }));
       } catch {
         setError('Quotation not found or you do not have access to it.');
@@ -172,29 +185,64 @@ export default function CreateQuote() {
   const setA = (k, v) => setForm((f) => ({ ...f, AmcRates: { ...f.AmcRates, [k]: v } }));
   const setReason = (k, v) => setForm((f) => ({ ...f, Reasons: { ...f.Reasons, [k]: v } }));
 
-  // ---------------------------------------------------------------- packages
+  // ---------------------------------------------------------------- room → configuration → version
+  const P0 = form.Project;
+  const rec = useMemo(() => recommend(catalog?.RoomGuide, P0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [catalog, P0.RoomLength, P0.RoomWidth, P0.RoomHeight, P0.Seats, P0.Rows, P0.Premium]);
+  useEffect(() => {
+    if (!catalog) return;
+    setForm((f) => {
+      const Recommended = rec?.pick || '';
+      const Configuration = configAuto && rec ? rec.pick : f.Project.Configuration;
+      if (Recommended === f.Project.Recommended && Configuration === f.Project.Configuration) return f;
+      return { ...f, Project: { ...f.Project, Recommended, Configuration } };
+    });
+  }, [catalog, rec, configAuto]);
+  useEffect(() => { if (rec) setError((e) => (e === ROOM_REQUIRED ? '' : e)); }, [rec]);
+
+  const chooseConfig = (code, auto) => {
+    setConfigAuto(!!auto);
+    setP('Configuration', code);
+  };
   const pickPackage = (pkg) => {
-    if (form.Items.length && String(form.Project.PackageId) !== String(pkg.Id)
-      && !window.confirm(`Replace the current BOQ (${form.Items.length} lines) with the ${pkg.Name} items?`)) return;
+    if (form.Items.length && !window.confirm(`Replace the current BOQ (${form.Items.length} lines) with ${pkg.Name}?`)) return;
     const products = Object.fromEntries((catalog?.Products || []).map((x) => [x.Id, x]));
-    const items = pkg.Items.map((i) => products[i.ProductId]).map((prod, idx) => (prod ? lineFromProduct(prod, pkg.Items[idx].Qty) : null)).filter(Boolean);
+    const items = pkg.Items.filter((i) => products[i.ProductId]).map((i) => lineFromProduct(products[i.ProductId], i.Qty, i.Price));
+    setConfigAuto(false);
     setForm((f) => ({
       ...f,
-      Project: { ...f.Project, PackageId: String(pkg.Id), Package: pkg.Name, Configuration: pkg.Configuration, Tier: pkg.Tier || f.Project.Tier },
-      Spec: pkg.Spec?.length ? cloneRows(pkg.Spec) : f.Spec,
+      Project: {
+        ...f.Project, PackageId: String(pkg.Id), Version: pkg.Name, Package: [pkg.Tier, pkg.Configuration].filter(Boolean).join(' '),
+        Configuration: pkg.Configuration, Tier: pkg.Tier
+      },
       Items: items
     }));
+    setToast(`${pkg.Name} — ${items.length} lines in the BOQ`);
   };
-  const customPackage = () => setForm((f) => ({ ...f, Project: { ...f.Project, PackageId: '' } }));
+  const customPackage = () => setForm((f) => ({ ...f, Project: { ...f.Project, PackageId: '', Version: '', Tier: '' } }));
   const selectedPackage = (catalog?.Packages || []).find((p) => String(p.Id) === String(form.Project.PackageId));
+  const versionPrices = useMemo(() => Object.fromEntries((selectedPackage?.Items || [])
+    .filter((i) => i.PackagePrice != null).map((i) => [i.ProductId, i.PackagePrice])), [selectedPackage]);
+  const acousticsProduct = (catalog?.Products || []).find((p) => p.Category === ACOUSTICS);
+  const addAcoustics = () => setForm((f) => ({
+    ...f,
+    Items: [...f.Items, acousticsProduct ? lineFromProduct(acousticsProduct, 1)
+      : { ...blankLine(ACOUSTICS), Name: 'Acoustic treatment & cinema recliners', Unit: 'Lot' }]
+  }));
 
   // ---------------------------------------------------------------- money (instant local mirror; server is authoritative)
-  const totals = useMemo(() => computeTotals(form.Items, form.DiscountMode, form.DiscountPercent, form.DiscountAmount),
-    [form.Items, form.DiscountMode, form.DiscountPercent, form.DiscountAmount]);
-  const discountPercentToSend = additionalPercent(
-    form.Items.filter((i) => !i.Optional).reduce((s, i) => s + (Number(i.Qty) || 0) * (Number(i.UnitPrice) || 0), 0),
-    form.DiscountMode, form.DiscountPercent, form.DiscountAmount
-  );
+  const discountInput = {
+    DiscountMode: form.DiscountMode, DiscountPercent: form.DiscountPercent, DiscountAmount: form.DiscountAmount,
+    DiscountPrice: form.DiscountPrice, DiscountPriceBasis: form.DiscountPriceBasis
+  };
+  const totals = useMemo(() => computeTotals(form.Items, discountInput),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [form.Items, form.DiscountMode, form.DiscountPercent, form.DiscountAmount, form.DiscountPrice, form.DiscountPriceBasis]);
+  const base = quotedBase(form.Items);
+  const discountPercentToSend = additionalPercent(base.quoted, discountInput, base.tax);
+  const priceBase = form.DiscountPriceBasis === 'incl' ? base.quoted + base.tax : base.quoted;
+  const priceTooHigh = form.DiscountMode === 'price' && form.DiscountPrice !== '' && Number(form.DiscountPrice) > Math.round(priceBase);
 
   // ---------------------------------------------------------------- payload
   const buildPayload = (extra = {}) => {
@@ -209,7 +257,6 @@ export default function CreateQuote() {
       ProductInfo: {
         ...form.Project,
         PackageId: form.Project.PackageId || null,
-        Spec: form.Spec.filter((r) => r.Label || r.Value),
         Scope: form.Scope,
         Finishes: form.Finishes.filter((r) => r.Label || r.Value),
         Items: itemsPayload(form.Items)
@@ -220,6 +267,8 @@ export default function CreateQuote() {
         ...form.SalesInfo,
         DiscountMode: form.DiscountMode,
         DiscountAmount: form.DiscountMode === 'amount' ? Number(form.DiscountAmount || 0) : 0,
+        DiscountPrice: form.DiscountMode === 'price' && form.DiscountPrice !== '' ? Number(form.DiscountPrice) : '',
+        DiscountPriceBasis: form.DiscountPriceBasis,
         SignatorySign: form.SignatorySign
       },
       WarrentyDetails: [{ Duration: Number(form.Warranty.Workmanship || 0), TypeOfParts: 'Workmanship' }],
@@ -253,7 +302,8 @@ export default function CreateQuote() {
   // ---------------------------------------------------------------- navigation / validation
   const stepError = (i) => {
     if (i === 0 && !form.CustomerName.trim()) return 'Customer name is required.';
-    if (i === 1 && !form.Project.Configuration.trim() && !form.Project.Package.trim()) return 'Choose a package or enter the configuration (e.g. 7.2.4).';
+    if (i === 1 && !(Number(form.Project.RoomLength) > 0 && Number(form.Project.RoomWidth) > 0)) return ROOM_REQUIRED;
+    if (i === 1 && !form.Project.Configuration.trim()) return 'Choose a configuration.';
     if (i === 2) {
       const named = form.Items.filter((x) => (x.Name || '').trim());
       if (!named.length) return 'Add at least one item to the BOQ.';
@@ -401,13 +451,32 @@ export default function CreateQuote() {
               </>
             )}
 
-            {/* STEP 2 — Project */}
+            {/* STEP 2 — Room & system */}
             {catalog && active === 1 && (
               <>
-                <SectionTitle hint="Pick a starting configuration — it fills the specification and the BOQ. Everything stays editable.">Package</SectionTitle>
-                <PackagePicker packages={catalog.Packages} selectedId={P.PackageId} onPick={pickPackage} onCustom={customPackage} />
+                <SectionTitle hint="The room size picks the recommended configuration — you can change it.">Room size</SectionTitle>
+                <Grid container spacing={2} alignItems="center">
+                  {[['RoomLength', 'Length', true], ['RoomWidth', 'Width', true], ['RoomHeight', 'Ceiling height', false]].map(([k, label, req]) => (
+                    <Grid item xs={4} sm={2} key={k}>
+                      <TextField fullWidth type="number" required={req} label={label} value={P[k]} onChange={(e) => setP(k, e.target.value)}
+                        InputProps={{ endAdornment: <InputAdornment position="end">ft</InputAdornment> }} inputProps={{ min: 0, step: 'any' }} />
+                    </Grid>
+                  ))}
+                  <Grid item xs={4} sm={2}><TextField fullWidth type="number" label="Seats" value={P.Seats} onChange={(e) => setP('Seats', e.target.value)} inputProps={{ min: 0 }} /></Grid>
+                  <Grid item xs={4} sm={2}><TextField fullWidth type="number" label="Seating rows" value={P.Rows} onChange={(e) => setP('Rows', e.target.value)} inputProps={{ min: 0 }} /></Grid>
+                  <Grid item xs={4} sm={2}>
+                    <FormControlLabel control={<Switch color="secondary" checked={P.Premium === 'yes'} onChange={(e) => setP('Premium', e.target.checked ? 'yes' : '')} />}
+                      label={<Typography variant="body2">Premium build</Typography>} />
+                  </Grid>
+                </Grid>
 
-                <SectionTitle sx={{ mt: 4 }}>Room &amp; project</SectionTitle>
+                <Box sx={{ mt: 3 }}>
+                  <SystemPicker catalog={catalog} configuration={P.Configuration} rec={rec} selected={selectedPackage}
+                    onConfig={chooseConfig} onPick={pickPackage} onCustom={customPackage}
+                    acoustics={{ note: catalog.AcousticsNote, present: form.Items.some((i) => i.Category === ACOUSTICS), onAdd: addAcoustics }} />
+                </Box>
+
+                <SectionTitle sx={{ mt: 4 }}>Project</SectionTitle>
                 <Grid container spacing={2}>
                   <Grid item xs={12} sm={6}>
                     <TextField fullWidth label="Room / area" placeholder="e.g. Basement home theatre" value={P.Room} onChange={(e) => setP('Room', e.target.value)} />
@@ -418,40 +487,17 @@ export default function CreateQuote() {
                     </TextField>
                   </Grid>
                   <Grid item xs={12} sm={4}>
-                    <Autocomplete freeSolo options={catalog.Configurations} inputValue={P.Configuration}
-                      onInputChange={(_, v, reason) => { if (reason !== 'reset') setP('Configuration', v); }}
-                      renderInput={(params) => <TextField {...params} required label="Configuration" placeholder="7.2.4" helperText="Speakers . subwoofers . height" />} />
-                  </Grid>
-                  <Grid item xs={12} sm={4}>
-                    <TextField select fullWidth label="Investment level" value={P.Tier} onChange={(e) => setP('Tier', e.target.value)}>
-                      {catalog.Tiers.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
-                    </TextField>
-                  </Grid>
-                  <Grid item xs={12} sm={4}>
                     <TextField select fullWidth label="Site stage" value={P.ConstructionStage} onChange={(e) => setP('ConstructionStage', e.target.value)}>
                       {catalog.ConstructionStages.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
                     </TextField>
                   </Grid>
-                  {[['RoomLength', 'Length'], ['RoomWidth', 'Width'], ['RoomHeight', 'Height']].map(([k, label]) => (
-                    <Grid item xs={4} sm={2} key={k}>
-                      <TextField fullWidth type="number" label={label} value={P[k]} onChange={(e) => setP(k, e.target.value)}
-                        InputProps={{ endAdornment: <InputAdornment position="end">ft</InputAdornment> }} inputProps={{ min: 0, step: 'any' }} />
-                    </Grid>
-                  ))}
-                  <Grid item xs={6} sm={2}><TextField fullWidth type="number" label="Seats" value={P.Seats} onChange={(e) => setP('Seats', e.target.value)} inputProps={{ min: 0 }} /></Grid>
-                  <Grid item xs={6} sm={2}><TextField fullWidth type="number" label="Rows" value={P.Rows} onChange={(e) => setP('Rows', e.target.value)} inputProps={{ min: 0 }} /></Grid>
-                  <Grid item xs={12} sm={2}><TextField fullWidth label="Screen" placeholder='135" 2.40:1' value={P.Screen} onChange={(e) => setP('Screen', e.target.value)} /></Grid>
-                  <Grid item xs={12}>
+                  <Grid item xs={12} sm={4}><TextField fullWidth label="Screen" placeholder='150" 16:9' value={P.Screen} onChange={(e) => setP('Screen', e.target.value)} /></Grid>
+                  <Grid item xs={12} sm={4}>
                     <TextField fullWidth label="Title on the cover (MODEL)" value={P.Package}
-                      placeholder={P.Configuration ? `${P.Configuration} Home Theatre` : 'e.g. 7.2.4 Dolby Atmos Home Cinema'}
-                      helperText="Leave blank to use the configuration" onChange={(e) => setP('Package', e.target.value)} />
+                      placeholder={P.Configuration ? `${P.Configuration} Home Theatre` : 'e.g. CinePrime 7.1.2'}
+                      helperText="Set by the version you choose" onChange={(e) => setP('Package', e.target.value)} />
                   </Grid>
                 </Grid>
-
-                <SectionTitle sx={{ mt: 4 }} hint="Printed as the Recommended Home Theatre Specification.">Recommended specification</SectionTitle>
-                <RowsEditor rows={form.Spec} onChange={(v) => set('Spec', v)} labels={catalog.SpecLabels} labelTitle="Element"
-                  onReset={() => set('Spec', cloneRows(selectedPackage?.Spec?.length ? selectedPackage.Spec : catalog.DefaultSpec))}
-                  resetLabel={selectedPackage ? 'Reset to package spec' : 'Reset to standard spec'} addLabel="Add element" />
 
                 <TextField fullWidth multiline minRows={2} label="Project notes (printed on the quotation)" value={P.Notes}
                   onChange={(e) => setP('Notes', e.target.value)} sx={{ mt: 3 }} />
@@ -464,30 +510,48 @@ export default function CreateQuote() {
                 <SectionTitle hint="Set the quantity and your price on every line. Going below a catalog list price counts towards the discount that needs approval. ☆ marks a line as an optional upgrade.">
                   Bill of quantities
                 </SectionTitle>
-                <BoqEditor items={form.Items} onChange={(v) => set('Items', v)} catalog={catalog} />
+                <BoqEditor items={form.Items} onChange={(v) => set('Items', v)} catalog={catalog} versionPrices={versionPrices} />
                 {priced && <TotalsBar t={totals} outsideLimit={outsideLimit} approvals={approvals.length} />}
 
-                <SectionTitle sx={{ mt: 4 }}>Additional discount</SectionTitle>
-                <Grid container spacing={2} alignItems="center">
-                  <Grid item xs={12} sm="auto">
-                    <ToggleButtonGroup size="small" exclusive value={form.DiscountMode} onChange={(_, v) => v && set('DiscountMode', v)}>
+                <SectionTitle sx={{ mt: 4 }} hint="Give a percentage, a rupee amount, or type the discounted price agreed with the customer.">Discount</SectionTitle>
+                <Grid container spacing={2} alignItems="flex-start">
+                  <Grid item xs={12} md="auto">
+                    <ToggleButtonGroup size="small" exclusive value={form.DiscountMode} onChange={(_, v) => v && set('DiscountMode', v)} aria-label="Discount type">
                       <ToggleButton value="pct">%</ToggleButton>
-                      <ToggleButton value="amount">₹</ToggleButton>
+                      <ToggleButton value="amount">₹ off</ToggleButton>
+                      <ToggleButton value="price">Discounted price</ToggleButton>
                     </ToggleButtonGroup>
                   </Grid>
-                  <Grid item xs={12} sm={4}>
-                    {form.DiscountMode === 'pct' ? (
+                  <Grid item xs={12} md={5}>
+                    {form.DiscountMode === 'pct' && (
                       <TextField fullWidth type="number" label="Discount on the BOQ" value={form.DiscountPercent}
                         onChange={(e) => set('DiscountPercent', e.target.value)} inputProps={{ min: 0, max: 100, step: 0.5 }}
                         InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }} error={outsideLimit} />
-                    ) : (
+                    )}
+                    {form.DiscountMode === 'amount' && (
                       <TextField fullWidth type="number" label="Discount amount (ex-GST)" value={form.DiscountAmount}
                         onChange={(e) => set('DiscountAmount', e.target.value)} inputProps={{ min: 0, step: 1000 }}
                         InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }} error={outsideLimit} />
                     )}
+                    {form.DiscountMode === 'price' && (
+                      <Stack direction="row" spacing={1}>
+                        <TextField fullWidth type="number" label={`Discounted price (${form.DiscountPriceBasis === 'incl' ? 'incl. GST' : 'ex-GST'})`}
+                          value={form.DiscountPrice} onChange={(e) => set('DiscountPrice', e.target.value)} inputProps={{ min: 0, step: 1000 }}
+                          InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }} error={outsideLimit || priceTooHigh}
+                          helperText={priceTooHigh ? `More than the BOQ total of ${inr(priceBase)} — no discount applied.`
+                            : `BOQ total ${inr(priceBase)} ${form.DiscountPriceBasis === 'incl' ? 'incl. GST' : 'ex-GST'}`} />
+                        <TextField select label="Price is" value={form.DiscountPriceBasis} onChange={(e) => set('DiscountPriceBasis', e.target.value)} sx={{ minWidth: 128 }}>
+                          <MenuItem value="ex">ex-GST</MenuItem>
+                          <MenuItem value="incl">incl. GST</MenuItem>
+                        </TextField>
+                      </Stack>
+                    )}
                   </Grid>
-                  <Grid item xs={12} sm>
+                  <Grid item xs={12} md>
                     <Typography variant="body2">
+                      Discounted price <b>{inr(totals.NetAmount)}</b> + GST {inr(totals.Tax)} = <b>{inr(totals.FinalAmount)}</b>
+                    </Typography>
+                    <Typography variant="body2" sx={{ mt: 0.25 }}>
                       Total discount vs list <b style={{ color: outsideLimit ? '#b8432f' : undefined }}>{pct(totals.DiscountPercent)}</b>
                       {' '}({inr(totals.DiscountAmount)}) · {policy?.discount?.selfLimit == null ? 'no limit for your role' : `up to ${policy.discount.selfLimit}% without approval`}
                     </Typography>
@@ -601,6 +665,7 @@ export default function CreateQuote() {
                     ]} />
                     <SummaryBlock title="Terms" rows={[
                       ['Total discount', `${pct(totals.DiscountPercent)} (${inr(totals.DiscountAmount)})`],
+                      ['Discounted price', `${inr(totals.NetAmount)} + GST = ${inr(totals.FinalAmount)}`],
                       ['Workmanship warranty', `${form.Warranty.Workmanship} yr`],
                       ['AMC', `Comprehensive ${form.AmcRates.Comprehensive}% · Preventive ${form.AmcRates.Preventive}%`],
                       ...form.PaymentTerms.map((t) => [t.TermName, `${t.TermValue}%`]),
@@ -609,9 +674,11 @@ export default function CreateQuote() {
                   </Grid>
                   <Grid item xs={12} md={6}>
                     <SummaryBlock title="Project" rows={[
-                      ['Package', P.Package || selectedPackage?.Name || 'Custom'], ['Configuration', P.Configuration],
-                      ['Room', P.Room], ['Investment', P.Tier],
-                      ['Room size', [P.RoomLength, P.RoomWidth, P.RoomHeight].filter(Boolean).join(' × ') && `${[P.RoomLength, P.RoomWidth, P.RoomHeight].filter(Boolean).join(' × ')} ft`],
+                      ['Version', P.Version || 'Custom'],
+                      ['Configuration', P.Recommended && P.Recommended !== P.Configuration ? `${P.Configuration} (room guide: ${P.Recommended})` : P.Configuration],
+                      ['Room', P.Room],
+                      ['Room size', [P.RoomLength, P.RoomWidth, P.RoomHeight].filter(Boolean).join(' × ')
+                        && `${[P.RoomLength, P.RoomWidth, P.RoomHeight].filter(Boolean).join(' × ')} ft${rec ? ` · ${rec.area} sq.ft` : ''}`],
                       ['Seating', [P.Seats && `${P.Seats} seats`, P.Rows && `${P.Rows} rows`].filter(Boolean).join(' · ')]
                     ]} />
                     <SummaryBlock title={`BOQ — ${totals.ItemCount} lines${totals.OptionalCount ? ` + ${totals.OptionalCount} optional` : ''}`} rows={
@@ -655,7 +722,7 @@ export default function CreateQuote() {
             {priced ? (
               <FinancialSummary f={totals} outsideLimit={outsideLimit} />
             ) : (
-              <Typography variant="body2" color="text.secondary">Choose a package or add priced items to see the value.</Typography>
+              <Typography variant="body2" color="text.secondary">Choose a version or add priced items to see the value.</Typography>
             )}
             {priced && (form.AmcRates.Comprehensive || form.AmcRates.Preventive) && (
               <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1 }}>
@@ -743,7 +810,7 @@ const TotalsBar = ({ t, outsideLimit, approvals }) => {
       {cell('List value', inr(t.BaseAmount))}
       {t.PriceAdjustment > 0 && cell('Line price cuts', `−${inr(t.PriceAdjustment)}`, '#e6c477')}
       {t.AdditionalDiscountAmount > 0 && cell('Additional discount', `−${inr(t.AdditionalDiscountAmount)}`, '#e6c477')}
-      {cell('Offer (ex-GST)', inr(t.NetAmount))}
+      {cell(t.DiscountAmount > 0 ? 'Discounted price' : 'Offer (ex-GST)', inr(t.NetAmount))}
       {cell('GST', inr(t.Tax))}
       {cell('Total discount', pct(t.DiscountPercent), outsideLimit ? '#f19a8a' : undefined)}
       <Box sx={{ flex: 1 }} />

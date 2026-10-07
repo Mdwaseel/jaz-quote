@@ -178,6 +178,48 @@ def _rows_or(rows, default):
     return rows or default
 
 
+# BOQ sections left out of the "system at a glance" page (they are in the detailed BOQ).
+SUMMARY_SKIP = {"Cables & Accessories", "Installation & Calibration"}
+
+
+def _room_area(p):
+    try:
+        area = float(p.get("RoomLength")) * float(p.get("RoomWidth"))
+    except (TypeError, ValueError):
+        return 0
+    return int(area) if area == int(area) else round(area, 1)
+
+
+def _equipment_label(i):
+    name, brand = i["Name"], (i.get("Brand") or "").strip()
+    if brand and brand.lower() not in name.lower() and brand not in ("Custom", "JAZ"):
+        name = f"{brand} {name}"
+    qty, unit = _num(i["Qty"]), i.get("Unit") or "Nos"
+    if unit == "Pair":
+        return f"{name} ({qty} pair{'' if qty == 1 else 's'})"
+    return f"{name} × {qty}" if qty != 1 else name
+
+
+def _system(quote, p, fin):
+    """The "Your home theatre system" page: configuration, version, room and the main
+    equipment by BOQ section."""
+    from catalog import jaz
+
+    cfg = quote.configuration or p.get("Configuration") or ""
+    sections = {}
+    for i in fin["items"]:
+        if not i.get("Optional") and i["Category"] not in SUMMARY_SKIP:
+            sections.setdefault(i["Category"], []).append(_equipment_label(i))
+    series = (p.get("Tier") or "").strip()
+    series_text = dict(jaz.SERIES).get(series, "")
+    rows = [(k, v) for k, v in (
+        ("Version", p.get("Version") or ""),
+        ("Series", f"{series} — {series_text}" if series and series_text else series),
+    ) if v]
+    rows += [(cat, "; ".join(items)) for cat, items in sections.items()]
+    return {"configuration": cfg, "name": jaz.config_name(cfg), "meaning": jaz.config_meaning(cfg), "rows": rows}
+
+
 def build_context(quote, watermark=""):
     from accounts.models import CompanyProfile
     from catalog import jaz
@@ -235,13 +277,15 @@ def build_context(quote, watermark=""):
         validity = 15
 
     room_size = " × ".join(x for x in (p.get("RoomLength"), p.get("RoomWidth"), p.get("RoomHeight")) if x)
+    area = _room_area(p)
     project = [(k, v) for k, v in (
         ("Room / Area", p.get("Room")), ("Project Type", p.get("ProjectType")),
-        ("Room Size", f"{room_size} ft (L × W × H)" if room_size else ""),
+        ("Room Size", (f"{room_size} ft ({'L × W × H' if p.get('RoomHeight') else 'L × W'})"
+                       + (f" · {area} sq.ft" if area else "")) if room_size else ""),
         ("Seating", " · ".join(x for x in (f"{p['Seats']} seats" if p.get("Seats") else "",
                                            f"{p['Rows']} row(s)" if p.get("Rows") else "") if x)),
         ("Screen", p.get("Screen")), ("Site Stage", p.get("ConstructionStage")),
-        ("Investment", p.get("Tier")),
+        ("Series", p.get("Tier")),
     ) if v]
 
     bank = selected_bank(quote)
@@ -276,7 +320,7 @@ def build_context(quote, watermark=""):
         "customer": c, "first_name": first_name, "address": address,
         "model": model, "configuration": quote.configuration or p.get("Configuration") or "",
         "project": project, "notes": p.get("Notes") or "",
-        "spec": _rows_or(p.get("Spec"), jaz.DEFAULT_SPEC),
+        "system": _system(quote, p, fin),
         "scope": p.get("Scope") or jaz.SCOPE,
         "finishes": _rows_or(p.get("Finishes"), jaz.DEFAULT_FINISHES),
         "standard_features": jaz.STANDARD_FEATURES,

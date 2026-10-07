@@ -47,7 +47,7 @@ def evaluate_quote(request):
     d = request.data or {}
     product = d.get("ProductInfo") or {}
     try:
-        items = normalize_items(product.get("Items"))
+        items = normalize_items(product.get("Items"), product.get("PackageId"))
     except rules.RuleError as e:
         items, item_error = [], str(e)
     else:

@@ -37,12 +37,20 @@ def product_row(p):
 
 
 def package_row(pkg):
-    items = [{"ProductId": i.product_id, "Qty": float(i.qty), "Name": i.product.name, "Category": i.product.category.name,
-              "Price": float(i.product.price)} for i in pkg.items.all()]
+    """A version and its items. Each item's Price is what the version charges for it — its
+    own package price when set, else the product's list price."""
+    items, value, gst = [], 0.0, 0.0
+    for i in pkg.items.all():
+        qty, price = float(i.qty), float(i.unit_price)
+        value += qty * price
+        gst += qty * price * float(i.product.effective_gst) / 100
+        items.append({"ProductId": i.product_id, "Qty": qty, "Name": i.product.name, "Category": i.product.category.name,
+                      "Brand": i.product.brands, "Unit": i.product.unit, "Price": price,
+                      "PackagePrice": None if i.price is None else float(i.price), "ProductPrice": float(i.product.price)})
     return {
         "Id": pkg.id, "Name": pkg.name, "Configuration": pkg.configuration, "Tier": pkg.tier,
-        "Description": pkg.description, "Spec": pkg.spec or [], "Active": pkg.is_active, "Items": items,
-        "ListValue": round(sum(i["Qty"] * i["Price"] for i in items)),
+        "Description": pkg.description, "Active": pkg.is_active, "Items": items,
+        "ListValue": round(value), "Gst": round(gst), "Total": round(value) + round(gst),
     }
 
 
@@ -60,12 +68,15 @@ def builder_catalog(request):
         "Products": [product_row(p) for p in products],
         "Packages": [package_row(p) for p in packages_qs().filter(is_active=True)],
         "Tiers": jaz.TIERS,
+        "Series": [{"Name": n, "Description": d} for n, d in jaz.SERIES],
         "ProjectTypes": jaz.PROJECT_TYPES,
         "ConstructionStages": jaz.CONSTRUCTION_STAGES,
         "Configurations": jaz.CONFIGURATIONS,
+        "ConfigGuide": jaz.CONFIG_GUIDE,
+        "RoomGuide": jaz.ROOM_GUIDE,
+        "RoomTips": jaz.ROOM_TIPS,
+        "AcousticsNote": jaz.ACOUSTICS_NOTE,
         "Brands": jaz.BRANDS,
-        "SpecLabels": jaz.SPEC_LABELS,
-        "DefaultSpec": jaz.DEFAULT_SPEC,
         "DefaultScope": jaz.SCOPE,
         "DefaultFinishes": jaz.DEFAULT_FINISHES,
         "Timelines": jaz.TIMELINES,

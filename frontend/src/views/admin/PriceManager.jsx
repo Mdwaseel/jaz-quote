@@ -11,7 +11,6 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import MainCard from '../../components/MainCard';
-import RowsEditor from '../quotation/builder/RowsEditor';
 import CsvImportDialog from './CsvImportDialog';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { inr } from '../../components/workflow/format';
@@ -19,7 +18,7 @@ import { fetchCatalog, updateCatalog, createCatalog, deleteCatalog, fetchCatalog
 
 const TABS = [
   { kind: 'product', label: 'Products & prices', singular: 'product' },
-  { kind: 'package', label: 'Packages', singular: 'package' },
+  { kind: 'package', label: 'Versions', singular: 'version' },
   { kind: 'category', label: 'Categories', singular: 'category' },
   { kind: 'paymentterm', label: 'Payment terms', singular: 'payment stage' }
 ];
@@ -69,7 +68,7 @@ export default function PriceManager() {
   };
 
   const remove = async (row) => {
-    const warn = type.kind === 'product' ? ' It will also be removed from any package. Tip: switch it off instead to hide it from new quotations.' : '';
+    const warn = type.kind === 'product' ? ' It will also be removed from any version. Tip: switch it off instead to hide it from new quotations.' : '';
     if (!window.confirm(`Delete “${row.Name}”?${warn}`)) return;
     setBusyId(row.Id);
     const res = await dispatch(deleteCatalog({ kind: type.kind, id: row.Id }));
@@ -97,7 +96,7 @@ export default function PriceManager() {
   const openCreate = () => {
     const defaults = {
       product: { name: '', categoryId: catFilter || refs.categories?.[0]?.Id || '', unit: 'Nos', value: '', gstPercent: '', specification: '', brands: '' },
-      package: { name: '', configuration: '', tier: '', description: '', spec: [], items: [], active: true },
+      package: { name: '', configuration: '', tier: refs.tiers?.[0] || '', description: '', items: [], active: true },
       category: { name: '', gstPercent: 18, order: (rows.length + 1) * 10 },
       paymentterm: { name: '', value: '', order: rows.length + 1 }
     }[type.kind];
@@ -106,7 +105,7 @@ export default function PriceManager() {
   const openPackage = (row) => setDialog({
     mode: 'edit', kind: 'package',
     data: { id: row.Id, name: row.Name, configuration: row.Configuration, tier: row.Tier, description: row.Description,
-      spec: row.Spec || [], active: row.Active, items: row.Items.map((i) => ({ productId: i.ProductId, qty: i.Qty })) }
+      active: row.Active, items: row.Items.map((i) => ({ productId: i.ProductId, qty: i.Qty, price: i.PackagePrice ?? '' })) }
   });
 
   return (
@@ -201,8 +200,8 @@ export default function PriceManager() {
               {type.kind === 'package' && (
                 <Table size="small">
                   <TableHead><TableRow sx={headSx}>
-                    <TableCell>Package</TableCell><TableCell>Configuration</TableCell><TableCell>Investment level</TableCell>
-                    <TableCell align="right">Items</TableCell><TableCell align="right">List value (ex-GST)</TableCell><TableCell>Active</TableCell><TableCell align="right">Actions</TableCell>
+                    <TableCell>Version</TableCell><TableCell>Configuration</TableCell><TableCell>Series</TableCell>
+                    <TableCell align="right">Items</TableCell><TableCell align="right">Price (ex-GST)</TableCell><TableCell>Active</TableCell><TableCell align="right">Actions</TableCell>
                   </TableRow></TableHead>
                   <TableBody>
                     {filtered.map((row) => (
@@ -215,7 +214,7 @@ export default function PriceManager() {
                         <TableCell align="right" sx={{ fontWeight: 650, fontVariantNumeric: 'tabular-nums' }}>{inr(row.ListValue)}</TableCell>
                         <TableCell><Switch checked={!!row.Active} onChange={(ev) => save(row, { active: ev.target.checked })} inputProps={{ 'aria-label': 'Active' }} color="secondary" /></TableCell>
                         <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                          <Tooltip title="Edit package"><IconButton size="small" onClick={() => openPackage(row)}><EditOutlinedIcon fontSize="small" /></IconButton></Tooltip>
+                          <Tooltip title="Edit version"><IconButton size="small" onClick={() => openPackage(row)}><EditOutlinedIcon fontSize="small" /></IconButton></Tooltip>
                           <Tooltip title="Delete"><span><IconButton color="error" size="small" disabled={busyId === row.Id} onClick={() => remove(row)}><DeleteOutlineIcon fontSize="small" /></IconButton></span></Tooltip>
                         </TableCell>
                       </TableRow>
@@ -294,8 +293,11 @@ function CatalogDialog({ dialog, setDialog, refs, onSubmit }) {
   if (!dialog) return null;
   const { kind, mode, data } = dialog;
   const set = (k, v) => setDialog((d) => ({ ...d, data: { ...d.data, [k]: v } }));
-  const title = `${mode === 'create' ? 'Add' : 'Edit'} ${{ product: 'product', package: 'package', category: 'category', paymentterm: 'payment stage' }[kind]}`;
-  const listValue = kind === 'package' ? (data.items || []).reduce((s, i) => s + (Number(i.qty) || 0) * (byId[i.productId]?.Price || 0), 0) : 0;
+  const title = `${mode === 'create' ? 'Add' : 'Edit'} ${{ product: 'product', package: 'version', category: 'category', paymentterm: 'payment stage' }[kind]}`;
+  // An item's version price, when set, replaces the product's list price in this version.
+  const itemPrice = (i) => (i.price !== '' && i.price != null ? Number(i.price) || 0 : byId[i.productId]?.Price || 0);
+  const listValue = kind === 'package' ? (data.items || []).reduce((s, i) => s + (Number(i.qty) || 0) * itemPrice(i), 0) : 0;
+  const setItem = (i, patch) => set('items', data.items.map((x, j) => (j === i ? { ...x, ...patch } : x)));
 
   return (
     <Dialog open onClose={() => setDialog(null)} maxWidth={kind === 'package' ? 'md' : 'sm'} fullWidth>
@@ -344,34 +346,35 @@ function CatalogDialog({ dialog, setDialog, refs, onSubmit }) {
                     onInputChange={(_, v) => set('configuration', v)} renderInput={(params) => <TextField {...params} label="Configuration" />} />
                 </Grid>
                 <Grid item xs={12} sm={8}>
-                  <TextField select label="Investment level" value={data.tier || ''} onChange={(e) => set('tier', e.target.value)} fullWidth>
+                  <TextField select label="Series" value={data.tier || ''} onChange={(e) => set('tier', e.target.value)} fullWidth>
                     {(refs.tiers || []).map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
                   </TextField>
                 </Grid>
               </Grid>
-              <TextField label="Description" multiline minRows={2} value={data.description || ''} onChange={(e) => set('description', e.target.value)} fullWidth />
+              <TextField label="Description (key equipment)" multiline minRows={2} value={data.description || ''} onChange={(e) => set('description', e.target.value)} fullWidth />
               <Box>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>Items · list value {inr(listValue)} + GST</Typography>
+                <Typography variant="subtitle2">Items · {inr(listValue)} + GST</Typography>
+                <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1 }}>
+                  Version price: what this version charges for the item. Leave it blank to use the product&apos;s list price.
+                </Typography>
                 <Stack spacing={1}>
                   {(data.items || []).map((it, i) => (
                     // eslint-disable-next-line react/no-array-index-key
-                    <Box key={i} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                      <Autocomplete sx={{ flex: 1 }} options={products} groupBy={(o) => o.Category} getOptionLabel={(o) => o.Name || ''}
+                    <Box key={i} sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: { xs: 'wrap', sm: 'nowrap' } }}>
+                      <Autocomplete sx={{ flex: 1, minWidth: 220 }} options={products} groupBy={(o) => o.Category} getOptionLabel={(o) => o.Name || ''}
                         value={byId[it.productId] || null} isOptionEqualToValue={(o, v) => o.Id === v.Id}
-                        onChange={(_, v) => set('items', data.items.map((x, j) => (j === i ? { ...x, productId: v?.Id } : x)))}
+                        onChange={(_, v) => setItem(i, { productId: v?.Id })}
                         renderInput={(params) => <TextField {...params} size="small" label="Product" />} />
-                      <TextField size="small" type="number" label="Qty" value={it.qty} sx={{ width: 90 }}
-                        onChange={(e) => set('items', data.items.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)))} />
-                      <Typography variant="body2" sx={{ width: 110, textAlign: 'right', color: 'text.secondary' }}>{inr((Number(it.qty) || 0) * (byId[it.productId]?.Price || 0))}</Typography>
+                      <TextField size="small" type="number" label="Qty" value={it.qty} sx={{ width: 84 }} onChange={(e) => setItem(i, { qty: e.target.value })} />
+                      <TextField size="small" type="number" label="Version price" value={it.price ?? ''} sx={{ width: 140 }}
+                        placeholder={byId[it.productId] ? String(byId[it.productId].Price) : ''} InputLabelProps={{ shrink: true }}
+                        onChange={(e) => setItem(i, { price: e.target.value })} />
+                      <Typography variant="body2" sx={{ width: 110, textAlign: 'right', color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{inr((Number(it.qty) || 0) * itemPrice(it))}</Typography>
                       <IconButton aria-label="Remove item" onClick={() => set('items', data.items.filter((_, j) => j !== i))}><DeleteOutlineIcon fontSize="small" /></IconButton>
                     </Box>
                   ))}
                 </Stack>
-                <Button size="small" startIcon={<AddIcon />} sx={{ mt: 1 }} onClick={() => set('items', [...(data.items || []), { productId: null, qty: 1 }])}>Add item</Button>
-              </Box>
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>Recommended specification</Typography>
-                <RowsEditor rows={data.spec || []} onChange={(v) => set('spec', v)} labels={refs.specLabels || []} labelTitle="Element" addLabel="Add element" />
+                <Button size="small" startIcon={<AddIcon />} sx={{ mt: 1 }} onClick={() => set('items', [...(data.items || []), { productId: null, qty: 1, price: '' }])}>Add item</Button>
               </Box>
             </>
           )}

@@ -63,13 +63,13 @@ class Product(models.Model):
 
 
 class Package(models.Model):
-    """A starting configuration (e.g. 7.2.4 Dolby Atmos Home Cinema) that pre-fills the
-    specification and the BOQ. Everything stays editable on the quotation."""
+    """A priced version of a configuration (e.g. "CinePrime 7.1.2 · Wharfedale Diamond")
+    that fills the BOQ. Everything stays editable on the quotation."""
     name = models.CharField(max_length=160)
-    configuration = models.CharField(max_length=20, blank=True, default="")  # "7.2.4"
-    tier = models.CharField(max_length=60, blank=True, default="")
+    configuration = models.CharField(max_length=20, blank=True, default="")  # "7.1.2"
+    tier = models.CharField(max_length=60, blank=True, default="")  # series: CinePrime / CineLuxe / CineRoyale
     description = models.TextField(blank=True, default="")
-    spec = models.JSONField(default=list, blank=True)  # [{"Label": ..., "Value": ...}]
+    spec = models.JSONField(default=list, blank=True)  # legacy, no longer used
     is_active = models.BooleanField(default=True)
     order = models.IntegerField(default=0)
 
@@ -84,10 +84,23 @@ class PackageItem(models.Model):
     package = models.ForeignKey(Package, on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="package_items")
     qty = models.DecimalField(max_digits=10, decimal_places=2, default=1)
+    # This version's own unit price for the product (ex-GST); None = the product's list price.
+    price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     order = models.IntegerField(default=0)
 
     class Meta:
         ordering = ["order", "id"]
+
+    @property
+    def unit_price(self):
+        return self.price if self.price is not None else self.product.price
+
+
+def package_prices(package_id):
+    """{product id: unit price} for a version's items that carry their own package price."""
+    if not package_id:
+        return {}
+    return dict(PackageItem.objects.filter(package_id=package_id, price__isnull=False).values_list("product_id", "price"))
 
 
 class PaymentTerm(models.Model):

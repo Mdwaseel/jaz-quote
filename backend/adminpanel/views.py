@@ -97,16 +97,14 @@ def _set_package_items(pkg, items):
         qty = _money(it.get("qty") if it.get("qty") is not None else it.get("Qty"), "quantity")
         if qty <= 0:
             raise Invalid(f"Quantity for “{product.name}” must be more than 0.")
-        rows.append(PackageItem(package=pkg, product=product, qty=qty, order=i))
+        # The version's own price for this product; blank = follow the product's list price.
+        price = _money(it.get("price") if "price" in it else it.get("PackagePrice"), f"price for “{product.name}”",
+                       allow_none=True)
+        if price is not None and price == product.price:
+            price = None
+        rows.append(PackageItem(package=pkg, product=product, qty=qty, price=price, order=i))
     pkg.items.all().delete()
     PackageItem.objects.bulk_create(rows)
-
-
-def _spec(rows):
-    if not isinstance(rows, list):
-        raise Invalid("Invalid specification.")
-    return [{"Label": str(r.get("Label") or "").strip()[:80], "Value": str(r.get("Value") or "").strip()[:400]}
-            for r in rows if isinstance(r, dict) and (r.get("Label") or r.get("Value"))]
 
 
 def _apply_fields(kind, obj, d):
@@ -146,8 +144,6 @@ def _apply_fields(kind, obj, d):
         for k, n in (("configuration", 20), ("tier", 60), ("description", 1000)):
             if has(k):
                 setattr(obj, k, str(d[k]).strip()[:n])
-        if has("spec"):
-            obj.spec = _spec(d["spec"])
         if has("active"):
             obj.is_active = bool(d["active"])
     elif kind == "paymentterm":
@@ -244,7 +240,6 @@ def catalog_refs(request):
         "products": [product_row(p) for p in Product.objects.select_related("category")],
         "tiers": jaz.TIERS,
         "configurations": jaz.CONFIGURATIONS,
-        "specLabels": jaz.SPEC_LABELS,
         "brands": jaz.BRANDS,
     })
 

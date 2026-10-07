@@ -31,3 +31,6 @@ backend/db.brio-backup.sqlite3
 # Tool caches
 .impeccable/
 frontend/.impeccable/
+
+# Internal sales price list (prices are seeded from backend/catalog/jaz.py)
+Jaz Sales Hand Book.xlsx
